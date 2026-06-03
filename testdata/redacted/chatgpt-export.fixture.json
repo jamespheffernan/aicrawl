@@ -1,0 +1,96 @@
+[
+  {
+    "id": "chatgpt-conv-branchy",
+    "title": "ChatGPT Branch Fixture",
+    "create_time": 1760000000.5,
+    "update_time": "not-a-time",
+    "current_node": "node-tool",
+    "mapping": {
+      "root": {
+        "id": "root",
+        "parent": null,
+        "children": ["node-system"],
+        "message": null
+      },
+      "node-system": {
+        "id": "node-system",
+        "parent": "root",
+        "children": ["node-user-1"],
+        "message": {
+          "author": {
+            "role": "system"
+          },
+          "create_time": 1760000001,
+          "content": {
+            "content_type": "text",
+            "parts": ["System fixture instruction."]
+          }
+        }
+      },
+      "node-user-1": {
+        "id": "node-user-1",
+        "parent": "node-system",
+        "children": ["node-assistant-a", "node-assistant-branch-b"],
+        "message": {
+          "author": {
+            "role": "user"
+          },
+          "create_time": 1760000002,
+          "content": {
+            "content_type": "text",
+            "parts": ["known fixture phrase from chatgpt AND OR NOT NEAR *"]
+          }
+        }
+      },
+      "node-assistant-a": {
+        "id": "node-assistant-a",
+        "parent": "node-user-1",
+        "children": [],
+        "message": {
+          "author": {
+            "role": "assistant"
+          },
+          "create_time": 1760000003,
+          "content": {
+            "content_type": "text",
+            "parts": ["First assistant branch preserved."]
+          }
+        }
+      },
+      "node-assistant-branch-b": {
+        "id": "node-assistant-branch-b",
+        "parent": "node-user-1",
+        "children": ["node-tool"],
+        "message": {
+          "author": {
+            "role": "assistant"
+          },
+          "create_time": 1760000004,
+          "content": {
+            "content_type": "text",
+            "parts": [
+              {
+                "text": "Current assistant branch preserved."
+              }
+            ]
+          }
+        }
+      },
+      "node-tool": {
+        "id": "node-tool",
+        "parent": "node-assistant-branch-b",
+        "children": [],
+        "message": {
+          "author": {
+            "role": "tool"
+          },
+          "create_time": 1760000005,
+          "content": {
+            "content_type": "tool",
+            "result": "Tool output searchable text."
+          }
+        }
+      }
+    }
+  }
+]

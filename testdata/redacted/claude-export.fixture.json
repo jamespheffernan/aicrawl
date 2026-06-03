@@ -1,0 +1,45 @@
+[
+  {
+    "uuid": "claude-conv-1",
+    "name": "Claude Fixture Conversation",
+    "created_at": "2026-01-02T03:04:05Z",
+    "updated_at": null,
+    "unknown_fixture_field": {
+      "kept_for_raw_payload_test": true
+    },
+    "chat_messages": [
+      {
+        "uuid": "claude-msg-1",
+        "sender": "human",
+        "created_at": "2026-01-02T03:05:00Z",
+        "text": "known fixture phrase from claude AND OR NOT NEAR *",
+        "attachments": [
+          {
+            "file_name": "notes.fixture.txt",
+            "mime_type": "text/plain",
+            "text": "synthetic attachment text"
+          }
+        ],
+        "files": [
+          {
+            "file_name": "file.fixture.md",
+            "content_type": "text/markdown",
+            "text": "synthetic file text"
+          }
+        ]
+      },
+      {
+        "uuid": "claude-msg-2",
+        "sender": "assistant",
+        "created_at": "2026-01-02T03:06:00Z",
+        "content": [
+          {
+            "type": "text",
+            "text": "Claude assistant answer with durable archive text."
+          }
+        ],
+        "extra_fixture_field": "preserve me"
+      }
+    ]
+  }
+]

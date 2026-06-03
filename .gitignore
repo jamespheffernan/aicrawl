@@ -1,0 +1,112 @@
+# Build artifacts
+/bin/
+/dist/
+coverage.out
+*.coverprofile
+*.prof
+*.test
+
+# Go / local tooling
+go.work
+go.work.sum
+/.gowork/
+/.crabbox/
+
+# SQLite archives and local stores
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite-journal
+*.sqlite-shm
+*.sqlite-wal
+*.sqlite3
+*.sqlite3-journal
+*.sqlite3-shm
+*.sqlite3-wal
+
+# Local runtime directories
+/.aicrawl/
+/.crawlbar/
+/.cache/
+/.config/aicrawl/
+/.local/share/aicrawl/
+/.local/state/aicrawl/
+/.tmp/
+/tmp/
+
+# Private planning / prompt artifacts
+/AGENT.md
+/docs/IMPLEMENTATION_PLAN.md
+/docs/CODEX_GOAL_PROMPT.md
+/docs/CODEX_*.md
+/docs/*.local.md
+/docs/*.private.md
+/docs/REAL_EXPORT_E2E_PLAN.private.md
+/*.goal.md
+/*.plan.md
+/*.prompt.md
+/*.local.md
+/*.private.md
+.goal
+
+# Private source data and imports
+/exports/
+/export/
+/exported-md/
+/imports/
+/import/
+/incoming/
+/source/
+/sources/
+/source-data/
+/raw/
+/raw-data/
+/data/
+/archives/
+/archive/
+/snapshots/
+/snapshot/
+/backups/
+/backup/
+
+# Provider export artifacts and extracted files
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.jsonl
+*.ndjson
+conversations.json
+chat.html
+user.json
+account.json
+/claude-export*.json
+/chatgpt-export*.json
+/anthropic-export*.json
+/openai-export*.json
+
+# Allow intentionally named synthetic/redacted fixtures.
+!testdata/**/*.fixture.json
+!testdata/**/*.fixture.jsonl
+!testdata/**/*.fixture.zip
+
+# Logs, secrets, and local env
+*.log
+.env
+.env.*
+!.env.example
+!.env.sample
+*.pem
+*.key
+*.crt
+*.token
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
