@@ -1,12 +1,12 @@
 # Architecture
 
-`aicrawl` is a local-first archive for AI conversation data. The v0.1 product is a CLI that imports local official export ZIP/JSON files, captured/live web conversation detail payloads, selected local agent session files, and Cursor chat stores into SQLite, preserves the original JSON payloads, builds a normalized text index, and exposes read-only retrieval, search, SQL, Markdown export, and CrawlBar metadata.
+`aicrawl` is a local-first archive for AI conversation data. The v0.1 product is a CLI that imports local official export ZIP/JSON files, captured/live web conversation detail payloads, selected local agent session files, and Cursor/Hermes chat stores into SQLite, preserves the original JSON payloads, builds a normalized text index, and exposes read-only retrieval, search, SQL, Markdown export, and CrawlBar metadata.
 
 ## User Workflow
 
-1. Collect an official export, captured web payload, local session file, or Cursor `store.db` in a private local directory.
+1. Collect an official export, captured web payload, local session file, Cursor `store.db`, or Hermes `state.db` in a private local directory.
 2. Run `aicrawl init` to create a private config and SQLite archive.
-3. Run `aicrawl import <path> --provider claude|chatgpt|openclaw|codex|gemini|claude-code|cursor|auto`.
+3. Run `aicrawl import <path> --provider claude|chatgpt|openclaw|codex|gemini|claude-code|cursor|hermes|auto`.
 4. Use `aicrawl sync web --provider chatgpt|claude --cdp-url <url>` for frequent recent web conversation capture.
 5. Periodically run `aicrawl reconcile <official-export> --provider chatgpt|claude|auto` to compare official exports against the archive and identify any backfill needed.
 6. Use `conversations`, `messages`, `search`, `sql`, or `export markdown` against the local archive.
@@ -32,6 +32,7 @@ internal/ingest/
   geminicli/              Gemini CLI session JSON parser
   claudecodejsonl/        Claude Code project JSONL parser
   cursorstore/            Cursor store.db SQLite parser
+  hermessession/          Hermes state.db and session JSON/JSONL parser
   localtext/              shared local transcript text/timestamp helpers
 internal/sync/
   browser/                browser-profile and CDP preflight for web sync
@@ -51,7 +52,7 @@ Provider-specific parsing stays under `internal/ingest/*`. Reusable local archiv
 
 ```mermaid
 flowchart LR
-  User["Export ZIP/JSON, local session file, or Cursor store.db"] --> Source["source reader"]
+  User["Export ZIP/JSON, local session file, or local chat store.db"] --> Source["source reader"]
   Source --> Detect["Provider selection or official export auto-detect"]
   Detect --> Parser["internal/ingest provider parser"]
   Parser --> Canonical["Canonical conversations, messages, edges, attachments"]

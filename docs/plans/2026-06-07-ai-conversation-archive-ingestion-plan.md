@@ -36,6 +36,7 @@ Official exports are too slow for keeping a private AI-chat database current, an
 - R7. Import Gemini CLI JSON chat sessions with stable session and message ordering.
 - R8. Import Claude Code local history only after its JSONL shape is characterized with redacted fixtures.
 - R9. Import Cursor chat databases only after the `blobs` and `meta` table payload contract is characterized with redacted fixtures.
+- R9a. Import Hermes session history from the local `state.db` session store, with exported session JSON/JSONL files as fallback sources.
 
 ### Archive Behavior
 
@@ -197,7 +198,7 @@ Web sync should add a browser-orchestrated acquisition layer in front of the exi
 
 ## Scope Boundaries
 
-- Deferred for later: browser extension packaging, embeddings/semantic search, automated official export download, cross-device mobile capture, and Hermes VM log ingestion.
+- Deferred for later: browser extension packaging, embeddings/semantic search, automated official export download, cross-device mobile capture, and arbitrary remote VM log ingestion outside the local Hermes session store.
 - Outside this project identity: cookie/token extraction, storing auth headers, bypassing login or access controls, browser automation that clicks export buttons, copying broad private assistant context onto the VM, and using the archive as accepted long-term memory.
 
 ---

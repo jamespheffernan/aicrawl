@@ -1,6 +1,6 @@
 # aicrawl
 
-`aicrawl` is a local-first archive for personal AI conversation history. The v0.1 CLI imports official Claude and ChatGPT export ZIP/JSON files, syncs recent ChatGPT and Claude web conversations through an attached or launched authenticated browser target or captured payload files, and imports local OpenClaw/Codex/Gemini/Claude Code/Cursor session files into a private SQLite archive. It preserves raw JSON payloads, indexes searchable message and extracted attachment/file text with FTS5, and exports conversations as Markdown.
+`aicrawl` is a local-first archive for personal AI conversation history. The v0.1 CLI imports official Claude and ChatGPT export ZIP/JSON files, syncs recent ChatGPT and Claude web conversations through an attached or launched authenticated browser target or captured payload files, and imports local OpenClaw/Codex/Gemini/Claude Code/Cursor/Hermes session files into a private SQLite archive. It preserves raw JSON payloads, indexes searchable message and extracted attachment/file text with FTS5, and exports conversations as Markdown.
 
 The project follows the OpenClaw pattern: provider-specific parsing lives in `aicrawl`, while reusable local archive mechanics use `github.com/openclaw/crawlkit` where it fits.
 
@@ -25,6 +25,8 @@ aicrawl import ~/.codex/sessions --provider codex --dry-run --json
 aicrawl import ./gemini-session.json --provider gemini
 aicrawl import ./claude-code-session.jsonl --provider claude-code
 aicrawl import ./store.db --provider cursor
+aicrawl import ~/.hermes/state.db --provider hermes
+aicrawl import ~/.hermes --provider hermes --dry-run --json
 aicrawl sync web --provider chatgpt --source ./chatgpt-web-conversation.json
 aicrawl sync web --provider chatgpt --cdp-url http://127.0.0.1:9222 --max-conversations 50
 aicrawl sync web --provider chatgpt --profile ~/.cache/aicrawl/browser-profiles/chatgpt --max-conversations 50
@@ -68,7 +70,8 @@ v0.1 supports local official export files, captured ChatGPT and Claude web conve
 - Gemini CLI session JSON with `sessionId` and `messages`.
 - Claude Code project JSONL with visible `user` and `assistant` message text. Control events, thinking blocks, tool calls, and tool results are skipped.
 - Cursor `store.db` SQLite files with visible `user`, `assistant`, and `system` text. Non-JSON blobs, tool calls, and tool results are skipped.
-- Directory import for local transcript roots: OpenClaw/Codex/Claude Code discover `*.jsonl`, Gemini discovers `*.json`, and Cursor discovers `store.db` recursively. Directory reports aggregate source counts without emitting full private paths.
+- Hermes `state.db` SQLite session stores and exported Hermes session `.json`/`.jsonl` files. `state.db` is opened read-only and imports visible `user`, `assistant`, `system`, `developer`, and `tool` message content while skipping session metadata and empty/internal records.
+- Directory import for local transcript roots: OpenClaw/Codex/Claude Code discover `*.jsonl`, Gemini discovers `*.json`, Cursor discovers `store.db`, and Hermes prefers a root `state.db` before falling back to `state.db`, `*.jsonl`, and `session_*.json` discovery. Directory reports aggregate source counts without emitting full private paths.
 
 `aicrawl` does not call Claude, ChatGPT, Anthropic, or OpenAI network APIs during import, captured source import, profile-only sync preflight, search, SQL, Markdown export, or CrawlBar manifest generation. Live web sync and `sync web --dry-run --cdp-url` use same-origin browser page fetches against the provider web app, with authentication kept inside the attached browser profile.
 

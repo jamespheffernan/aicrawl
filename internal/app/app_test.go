@@ -441,6 +441,50 @@ func TestImportDirectoryImportsSearchableLocalSourcesIdempotently(t *testing.T) 
 	}
 }
 
+func TestImportHermesDirectoryPrefersStateDBOverSidecarSessions(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
+
+	hermesRoot := filepath.Join(t.TempDir(), ".hermes")
+	writeHermesStoreFixture(t, filepath.Join(hermesRoot, "state.db"))
+	copyFixture(t,
+		filepath.Join("..", "..", "testdata", "redacted", "hermes-session.fixture.json"),
+		filepath.Join(hermesRoot, "sessions", "session_stale_sidecar.json"),
+	)
+
+	var stdout bytes.Buffer
+	cli := New()
+	cli.stdout = &stdout
+	if err := cli.Run(context.Background(), []string{"import", hermesRoot, "--provider", "hermes", "--json"}); err != nil {
+		t.Fatalf("directory import: %v", err)
+	}
+	var stats importDirectoryStats
+	if err := json.Unmarshal(stdout.Bytes(), &stats); err != nil {
+		t.Fatalf("decode directory import: %v", err)
+	}
+	if stats.Provider != "hermes" || stats.SourceKind != "hermes_session" || stats.Sources != 1 || stats.ImportedSources != 1 {
+		t.Fatalf("directory stats = %+v, want only state.db imported", stats)
+	}
+	if stats.Conversations != 1 || stats.Messages != 2 {
+		t.Fatalf("directory counts = %+v, want state.db counts only", stats)
+	}
+	stdout.Reset()
+
+	if err := cli.Run(context.Background(), []string{"search", "hermes store app fixture assistant phrase", "--provider", "hermes", "--json"}); err != nil {
+		t.Fatalf("search directory import: %v", err)
+	}
+	var hits []archive.SearchHit
+	if err := json.Unmarshal(stdout.Bytes(), &hits); err != nil {
+		t.Fatalf("decode search hits: %v", err)
+	}
+	if len(hits) != 1 {
+		t.Fatalf("hits = %+v, want one Hermes state.db hit", hits)
+	}
+}
+
 func TestReconcileOfficialExportReportsMissingAndArchivedRows(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -998,6 +1042,12 @@ func TestImportLocalTranscriptSourcesAreSearchable(t *testing.T) {
 			fixture:  "claude-code-session.fixture.jsonl",
 			query:    "claude code jsonl fixture assistant phrase",
 		},
+		{
+			name:     "hermes",
+			provider: "hermes",
+			fixture:  "hermes-session.fixture.json",
+			query:    "hermes json fixture assistant phrase",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1071,6 +1121,43 @@ func TestImportCursorStoreSourceIsSearchable(t *testing.T) {
 	}
 	if len(hits) != 1 || hits[0].Provider != "cursor" {
 		t.Fatalf("hits = %+v, want one cursor hit", hits)
+	}
+}
+
+func TestImportHermesStateStoreSourceIsSearchable(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
+
+	storePath := filepath.Join(t.TempDir(), ".hermes", "state.db")
+	writeHermesStoreFixture(t, storePath)
+
+	var stdout bytes.Buffer
+	cli := New()
+	cli.stdout = &stdout
+	if err := cli.Run(context.Background(), []string{"import", storePath, "--provider", "hermes", "--json"}); err != nil {
+		t.Fatalf("import hermes store fixture: %v", err)
+	}
+	var stats archive.ImportStats
+	if err := json.Unmarshal(stdout.Bytes(), &stats); err != nil {
+		t.Fatalf("decode import stats: %v", err)
+	}
+	if stats.Provider != "hermes" || stats.SourceKind != "hermes_session" || stats.Conversations != 1 || stats.Messages != 2 {
+		t.Fatalf("stats = %+v, want one Hermes conversation with two visible messages", stats)
+	}
+	stdout.Reset()
+
+	if err := cli.Run(context.Background(), []string{"search", "hermes store app fixture assistant phrase", "--provider", "hermes", "--json"}); err != nil {
+		t.Fatalf("search hermes fixture: %v", err)
+	}
+	var hits []archive.SearchHit
+	if err := json.Unmarshal(stdout.Bytes(), &hits); err != nil {
+		t.Fatalf("decode search hits: %v", err)
+	}
+	if len(hits) != 1 || hits[0].Provider != "hermes" {
+		t.Fatalf("hits = %+v, want one Hermes hit", hits)
 	}
 }
 
@@ -1729,6 +1816,89 @@ func writeCursorStoreFixture(t *testing.T, path string) {
 	for _, row := range rows {
 		if _, err := db.Exec(`insert into blobs(id, data) values(?, ?)`, row.id, row.data); err != nil {
 			t.Fatalf("insert cursor fixture blob: %v", err)
+		}
+	}
+}
+
+func writeHermesStoreFixture(t *testing.T, path string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatalf("create hermes fixture dir: %v", err)
+	}
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("open hermes fixture db: %v", err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`
+		create table sessions (
+			id text primary key,
+			source text,
+			user_id text,
+			model text,
+			model_config text,
+			system_prompt text,
+			parent_session_id text,
+			started_at real,
+			ended_at real,
+			end_reason text,
+			message_count integer,
+			tool_call_count integer,
+			input_tokens integer,
+			output_tokens integer,
+			cache_read_tokens integer,
+			cache_write_tokens integer,
+			reasoning_tokens integer,
+			billing_provider text,
+			billing_base_url text,
+			billing_mode text,
+			estimated_cost_usd real,
+			actual_cost_usd real,
+			cost_status text,
+			cost_source text,
+			pricing_version text,
+			title text
+		);
+		create table messages (
+			id integer primary key,
+			session_id text,
+			role text,
+			content text,
+			tool_call_id text,
+			tool_calls text,
+			tool_name text,
+			timestamp real,
+			token_count integer,
+			finish_reason text,
+			reasoning text,
+			reasoning_details text,
+			codex_reasoning_items text
+		);
+	`); err != nil {
+		t.Fatalf("create hermes fixture schema: %v", err)
+	}
+	if _, err := db.Exec(`insert into sessions (
+		id, source, model, model_config, system_prompt, started_at, ended_at,
+		end_reason, message_count, tool_call_count, input_tokens, output_tokens, title
+	) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"hermes-store-session", "telegram", "redacted-model", "{}", "redacted system prompt",
+		1760000000.0, 1760000060.0, "stop", 4, 0, 10, 20, "Hermes store app fixture",
+	); err != nil {
+		t.Fatalf("insert hermes fixture session: %v", err)
+	}
+	rows := []struct {
+		role    string
+		content string
+		ts      float64
+	}{
+		{"session_meta", "metadata that should not be indexed", 1760000000.0},
+		{"user", "hermes store app fixture user phrase", 1760000001.0},
+		{"assistant", "hermes store app fixture assistant phrase", 1760000002.0},
+		{"tool", "", 1760000003.0},
+	}
+	for _, row := range rows {
+		if _, err := db.Exec(`insert into messages(session_id, role, content, timestamp) values(?, ?, ?, ?)`, "hermes-store-session", row.role, row.content, row.ts); err != nil {
+			t.Fatalf("insert hermes fixture message: %v", err)
 		}
 	}
 }

@@ -1,0 +1,3 @@
+{"role":"system","timestamp":"2026-06-07T10:00:00Z","model":"redacted-model","platform":"cli","tools":[]}
+{"role":"user","content":"hermes jsonl fixture user phrase","timestamp":"2026-06-07T10:00:10Z"}
+{"role":"assistant","content":"hermes jsonl fixture assistant phrase","timestamp":"2026-06-07T10:00:20Z","finish_reason":"stop"}

@@ -1,0 +1,44 @@
+{
+  "session_id": "hermes-session-fixture",
+  "model": "redacted-model",
+  "base_url": "https://example.invalid",
+  "platform": "telegram",
+  "session_start": "2026-06-07T10:00:00Z",
+  "last_updated": "2026-06-07T10:02:00Z",
+  "system_prompt": "redacted system prompt",
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "redacted_tool",
+        "description": "redacted tool description",
+        "parameters": {}
+      }
+    }
+  ],
+  "message_count": 4,
+  "messages": [
+    {
+      "role": "user",
+      "content": "hermes json fixture user phrase",
+      "timestamp": "2026-06-07T10:00:10Z"
+    },
+    {
+      "role": "assistant",
+      "content": "hermes json fixture assistant phrase",
+      "timestamp": "2026-06-07T10:00:20Z",
+      "finish_reason": "stop"
+    },
+    {
+      "role": "assistant",
+      "content": "",
+      "timestamp": "2026-06-07T10:00:30Z"
+    },
+    {
+      "role": "tool",
+      "content": "hermes json fixture tool phrase",
+      "tool_name": "redacted_tool",
+      "timestamp": "2026-06-07T10:00:40Z"
+    }
+  ]
+}

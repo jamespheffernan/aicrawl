@@ -36,7 +36,7 @@ func importSourceIsDir(path string) (bool, error) {
 
 func inspectImportDirectory(root, provider string) (importDryRunReport, error) {
 	if !supportsDirectoryImport(provider) {
-		return importDryRunReport{}, fmt.Errorf("directory import requires provider openclaw, codex, gemini, claude-code, or cursor")
+		return importDryRunReport{}, fmt.Errorf("directory import requires provider openclaw, codex, gemini, claude-code, cursor, or hermes")
 	}
 	header, err := importSourceIdentity(provider)
 	if err != nil {
@@ -74,7 +74,7 @@ func inspectImportDirectory(root, provider string) (importDryRunReport, error) {
 
 func importDirectory(ctx context.Context, ar *archive.Archive, root, provider string) (importDirectoryStats, error) {
 	if !supportsDirectoryImport(provider) {
-		return importDirectoryStats{}, fmt.Errorf("directory import requires provider openclaw, codex, gemini, claude-code, or cursor")
+		return importDirectoryStats{}, fmt.Errorf("directory import requires provider openclaw, codex, gemini, claude-code, cursor, or hermes")
 	}
 	header, err := importSourceIdentity(provider)
 	if err != nil {
@@ -127,7 +127,13 @@ func skippedImportSourceWarning(action string, index, total int, err error) stri
 
 func discoverImportSourceFiles(root, provider string) ([]string, error) {
 	if !supportsDirectoryImport(provider) {
-		return nil, fmt.Errorf("directory import requires provider openclaw, codex, gemini, claude-code, or cursor")
+		return nil, fmt.Errorf("directory import requires provider openclaw, codex, gemini, claude-code, cursor, or hermes")
+	}
+	if provider == "hermes" {
+		stateDB := filepath.Join(root, "state.db")
+		if info, err := os.Stat(stateDB); err == nil && !info.IsDir() {
+			return []string{stateDB}, nil
+		}
 	}
 	var files []string
 	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
@@ -154,7 +160,7 @@ func discoverImportSourceFiles(root, provider string) ([]string, error) {
 
 func supportsDirectoryImport(provider string) bool {
 	switch provider {
-	case "openclaw", "codex", "gemini", "claude-code", "cursor":
+	case "openclaw", "codex", "gemini", "claude-code", "cursor", "hermes":
 		return true
 	default:
 		return false
@@ -171,6 +177,8 @@ func matchesImportSourceFile(path, provider string) bool {
 		return ext == ".json"
 	case "cursor":
 		return name == "store.db"
+	case "hermes":
+		return name == "state.db" || ext == ".jsonl" || (ext == ".json" && strings.HasPrefix(name, "session_"))
 	default:
 		return false
 	}

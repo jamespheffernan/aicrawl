@@ -61,6 +61,7 @@ cp ./testdata/redacted/codex-session.fixture.jsonl "$SMOKE/codex-root/session.js
 "$BIN" import "$SMOKE/codex-root" --provider codex --dry-run --json
 "$BIN" import ./testdata/redacted/gemini-session.fixture.json --provider gemini --json
 "$BIN" import ./testdata/redacted/claude-code-session.fixture.jsonl --provider claude-code --json
+"$BIN" import ./testdata/redacted/hermes-session.fixture.json --provider hermes --json
 "$BIN" sync web --provider chatgpt --source ./testdata/redacted/chatgpt-web-conversation.fixture.json --json
 "$BIN" sync web --provider claude --source ./testdata/redacted/claude-web-conversation.fixture.json --json
 "$BIN" import ./testdata/redacted/claude-export.fixture.zip --provider claude --json
@@ -73,6 +74,7 @@ cp ./testdata/redacted/codex-session.fixture.jsonl "$SMOKE/codex-root/session.js
 "$BIN" search "codex jsonl fixture assistant phrase" --provider codex --json
 "$BIN" search "gemini cli fixture assistant phrase" --provider gemini --json
 "$BIN" search "claude code jsonl fixture assistant phrase" --provider claude-code --json
+"$BIN" search "hermes json fixture assistant phrase" --provider hermes --json
 "$BIN" search "web sync claude fixture assistant phrase" --provider claude --json
 "$BIN" search "AND OR NOT NEAR *"
 "$BIN" sql "select count(*) from messages"

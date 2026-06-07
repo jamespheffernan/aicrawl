@@ -11,15 +11,15 @@ Usage:
   aicrawl doctor [--json]
   aicrawl metadata [--json]
   aicrawl status [--json]
-  aicrawl import <zip-json-jsonl-db-or-dir> [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|cursor|auto] [--dry-run] [--json]
+  aicrawl import <zip-json-jsonl-db-or-dir> [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|cursor|hermes|auto] [--dry-run] [--json]
   aicrawl reconcile <official-export-zip-or-json> [--provider claude|chatgpt|auto] [--json]
   aicrawl sync web --provider chatgpt|claude [--source <json-or-zip>] [--profile <dir> | --cdp-url <url>] [--browser <path>] [--remote-debugging-port 0] [--capture <network.json>] [--max-conversations 50] [--dry-run] [--json]
   aicrawl schedule launchd --provider chatgpt|claude [--cdp-url <url> | --profile <dir>] [--browser <path>] [--remote-debugging-port 0] [--interval-minutes 15] [--max-conversations 50] [--out <plist>] [--json]
-  aicrawl conversations [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|cursor|all] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit 50]
+  aicrawl conversations [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|cursor|hermes|all] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit 50]
   aicrawl messages --conversation <id> [--path current|all] [--around <message-id>] [--context 5 | --before N --after N]
-  aicrawl search <query> [--group messages|conversations] [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|cursor|all] [--scope visible|transcript|attachments|internal|all] [--role user|assistant|system|developer|tool|attachment|unknown|all] [--path current|all] [--sort relevance|recent] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit 25]
+  aicrawl search <query> [--group messages|conversations] [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|cursor|hermes|all] [--scope visible|transcript|attachments|internal|all] [--role user|assistant|system|developer|tool|attachment|unknown|all] [--path current|all] [--sort relevance|recent] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit 25]
   aicrawl sql <readonly-sql> [--json]
-  aicrawl export markdown --out <dir> [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|cursor|all] [--conversation <id>] [--query <query>] [--scope visible|transcript|attachments|internal|all] [--role user|assistant|system|developer|tool|attachment|unknown|all] [--path current|all] [--sort relevance|recent] [--since YYYY-MM-DD] [--until YYYY-MM-DD]
+  aicrawl export markdown --out <dir> [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|cursor|hermes|all] [--conversation <id>] [--query <query>] [--scope visible|transcript|attachments|internal|all] [--role user|assistant|system|developer|tool|attachment|unknown|all] [--path current|all] [--sort relevance|recent] [--since YYYY-MM-DD] [--until YYYY-MM-DD]
   aicrawl crawlbar manifest [--out ~/.crawlbar/apps/aicrawl.json]
 
 Global options:
@@ -81,7 +81,7 @@ aicrawl doctor --json
 
 ## `import`
 
-Imports one local source ZIP, JSON, JSONL, Cursor `store.db` file, or local transcript directory.
+Imports one local source ZIP, JSON, JSONL, Cursor `store.db` file, Hermes `state.db` file, or local transcript directory.
 
 ```bash
 aicrawl import ./chatgpt-export.zip --dry-run --json
@@ -92,14 +92,16 @@ aicrawl import ./codex-session.jsonl --provider codex
 aicrawl import ./gemini-session.json --provider gemini
 aicrawl import ./claude-code-session.jsonl --provider claude-code
 aicrawl import ./store.db --provider cursor
+aicrawl import ~/.hermes/state.db --provider hermes
+aicrawl import ~/.hermes --provider hermes --dry-run --json
 aicrawl import ~/.codex/sessions --provider codex --dry-run --json
 aicrawl import ~/.claude/projects --provider claude-code --json
 aicrawl import ./export.zip --provider auto
 ```
 
-Provider defaults to official Claude/ChatGPT export auto-detection when omitted or set to `auto`. Local agent transcript providers must be selected explicitly. OpenClaw imports preserve visible message text and, when present, Discord/Telegram-style `sourceChannel` and sender metadata in conversation titles and message sender columns. Claude Code imports keep visible user/assistant text and skip control events, thinking blocks, tool calls, and tool results. Cursor imports open `store.db` read-only, use meta identity/title when available, order visible message blobs by SQLite `rowid`, and skip non-JSON blobs, tool calls, and tool results. Imports are idempotent by source kind, provider, and source hash. Text output includes a reminder that source files still contain private data.
+Provider defaults to official Claude/ChatGPT export auto-detection when omitted or set to `auto`. Local agent transcript providers must be selected explicitly. OpenClaw imports preserve visible message text and, when present, Discord/Telegram-style `sourceChannel` and sender metadata in conversation titles and message sender columns. Claude Code imports keep visible user/assistant text and skip control events, thinking blocks, tool calls, and tool results. Cursor imports open `store.db` read-only, use meta identity/title when available, order visible message blobs by SQLite `rowid`, and skip non-JSON blobs, tool calls, and tool results. Hermes imports open `state.db` read-only when present, preserve session source/title/model metadata in raw payloads, and index visible `user`, `assistant`, `system`, `developer`, and `tool` content while skipping `session_meta` and empty/internal records. Imports are idempotent by source kind, provider, and source hash. Text output includes a reminder that source files still contain private data.
 
-When `<path>` is a directory, `--provider` must be one of `openclaw`, `codex`, `gemini`, `claude-code`, or `cursor`. Directory import recursively discovers provider-shaped sources: OpenClaw/Codex/Claude Code `*.jsonl`, Gemini `*.json`, and Cursor `store.db`. JSON output is an aggregate report with source counts, imported/already-imported source counts, conversation/message/attachment totals, and parser warnings. It does not include full source paths or message text.
+When `<path>` is a directory, `--provider` must be one of `openclaw`, `codex`, `gemini`, `claude-code`, `cursor`, or `hermes`. Directory import recursively discovers provider-shaped sources: OpenClaw/Codex/Claude Code `*.jsonl`, Gemini `*.json`, Cursor `store.db`, and Hermes `state.db`, `*.jsonl`, or `session_*.json`. For a Hermes root directory containing `state.db`, directory import uses that store as the canonical source and does not also import sidecar session files beneath it. JSON output is an aggregate report with source counts, imported/already-imported source counts, conversation/message/attachment totals, and parser warnings. It does not include full source paths or message text.
 
 With `--dry-run`, import parses the source and reports candidate counts without opening, creating, or writing the archive. JSON output includes provider, source kind, conversation count, message count, attachment count, skipped source count for directory imports, and parser warnings capped at 100 entries plus a truncation summary. It does not include message bodies or full source paths.
 

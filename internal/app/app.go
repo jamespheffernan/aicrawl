@@ -18,6 +18,7 @@ import (
 	"github.com/openclaw/aicrawl/internal/ingest/codexjsonl"
 	"github.com/openclaw/aicrawl/internal/ingest/cursorstore"
 	"github.com/openclaw/aicrawl/internal/ingest/geminicli"
+	"github.com/openclaw/aicrawl/internal/ingest/hermessession"
 	"github.com/openclaw/aicrawl/internal/ingest/openclawjsonl"
 	"github.com/openclaw/aicrawl/internal/sync/browser"
 	"github.com/openclaw/aicrawl/internal/sync/cdp"
@@ -102,15 +103,15 @@ Usage:
   aicrawl doctor [--json]
   aicrawl metadata [--json]
   aicrawl status [--json]
-  aicrawl import <zip-json-jsonl-db-or-dir> [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|cursor|auto] [--dry-run] [--json]
+  aicrawl import <zip-json-jsonl-db-or-dir> [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|cursor|hermes|auto] [--dry-run] [--json]
   aicrawl reconcile <official-export-zip-or-json> [--provider claude|chatgpt|auto] [--json]
   aicrawl sync web --provider chatgpt|claude [--source <json-or-zip>] [--profile <dir> | --cdp-url <url>] [--browser <path>] [--remote-debugging-port 0] [--capture <network.json>] [--max-conversations 50] [--dry-run] [--json]
   aicrawl schedule launchd --provider chatgpt|claude [--cdp-url <url> | --profile <dir>] [--browser <path>] [--remote-debugging-port 0] [--interval-minutes 15] [--max-conversations 50] [--out <plist>] [--json]
-  aicrawl conversations [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|cursor|all] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit 50]
+  aicrawl conversations [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|cursor|hermes|all] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit 50]
   aicrawl messages --conversation <id> [--path current|all] [--around <message-id>] [--context 5 | --before N --after N]
-  aicrawl search <query> [--group messages|conversations] [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|cursor|all] [--scope visible|transcript|attachments|internal|all] [--role user|assistant|system|developer|tool|attachment|unknown|all] [--path current|all] [--sort relevance|recent] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit 25]
+  aicrawl search <query> [--group messages|conversations] [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|cursor|hermes|all] [--scope visible|transcript|attachments|internal|all] [--role user|assistant|system|developer|tool|attachment|unknown|all] [--path current|all] [--sort relevance|recent] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit 25]
   aicrawl sql <readonly-sql> [--json]
-  aicrawl export markdown --out <dir> [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|cursor|all] [--conversation <id>] [--query <query>] [--scope visible|transcript|attachments|internal|all] [--role user|assistant|system|developer|tool|attachment|unknown|all] [--path current|all] [--sort relevance|recent] [--since YYYY-MM-DD] [--until YYYY-MM-DD]
+  aicrawl export markdown --out <dir> [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|cursor|hermes|all] [--conversation <id>] [--query <query>] [--scope visible|transcript|attachments|internal|all] [--role user|assistant|system|developer|tool|attachment|unknown|all] [--path current|all] [--sort relevance|recent] [--since YYYY-MM-DD] [--until YYYY-MM-DD]
   aicrawl crawlbar manifest [--out ~/.crawlbar/apps/aicrawl.json]
 
 Global options:
@@ -414,7 +415,7 @@ func (a *App) importSource(ctx context.Context, globals globalOptions, args []st
 		return writeTextLine(a.stdout, "%s", report.PrivacyReminder)
 	}
 	if isDir && !supportsDirectoryImport(provider) {
-		return withExitCode(2, fmt.Errorf("directory import requires provider openclaw, codex, gemini, claude-code, or cursor"))
+		return withExitCode(2, fmt.Errorf("directory import requires provider openclaw, codex, gemini, claude-code, cursor, or hermes"))
 	}
 	rt, err := resolveRuntime(globals.configPath, true)
 	if err != nil {
@@ -524,6 +525,8 @@ func streamImportSource(path, provider string, emit archive.ConversationEmitter)
 		return cursorstore.StreamFile(path, emit)
 	case "gemini":
 		return geminicli.StreamFile(path, emit)
+	case "hermes":
+		return hermessession.StreamFile(path, emit)
 	case "auto", "":
 		header, err := streamImportSource(path, "claude", emit)
 		if err == nil {
@@ -561,6 +564,8 @@ func importSourceIdentity(provider string) (archive.ParsedSource, error) {
 		return archive.ParsedSource{Provider: cursorstore.Provider, SourceKind: cursorstore.SourceKind}, nil
 	case "gemini":
 		return archive.ParsedSource{Provider: geminicli.Provider, SourceKind: geminicli.SourceKind}, nil
+	case "hermes":
+		return archive.ParsedSource{Provider: hermessession.Provider, SourceKind: hermessession.SourceKind}, nil
 	default:
 		return archive.ParsedSource{}, fmt.Errorf("unsupported provider %q", provider)
 	}
@@ -1548,10 +1553,10 @@ func providerOrAll(value string) (string, error) {
 		return "all", nil
 	}
 	switch value {
-	case "all", "claude", "chatgpt", "openclaw", "codex", "gemini", "claude-code", "cursor":
+	case "all", "claude", "chatgpt", "openclaw", "codex", "gemini", "claude-code", "cursor", "hermes":
 		return value, nil
 	default:
-		return "", fmt.Errorf("--provider must be claude, chatgpt, openclaw, codex, gemini, claude-code, cursor, or all")
+		return "", fmt.Errorf("--provider must be claude, chatgpt, openclaw, codex, gemini, claude-code, cursor, hermes, or all")
 	}
 }
 
@@ -1560,10 +1565,10 @@ func importProvider(value string) (string, error) {
 		return "auto", nil
 	}
 	switch value {
-	case "auto", "claude", "chatgpt", "openclaw", "codex", "gemini", "claude-code", "cursor":
+	case "auto", "claude", "chatgpt", "openclaw", "codex", "gemini", "claude-code", "cursor", "hermes":
 		return value, nil
 	default:
-		return "", fmt.Errorf("--provider must be claude, chatgpt, openclaw, codex, gemini, claude-code, cursor, or auto")
+		return "", fmt.Errorf("--provider must be claude, chatgpt, openclaw, codex, gemini, claude-code, cursor, hermes, or auto")
 	}
 }
 

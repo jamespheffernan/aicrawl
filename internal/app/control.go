@@ -73,6 +73,7 @@ func buildManifest(rt runtime) control.Manifest {
 			"gemini_cli",
 			"claude_code_jsonl",
 			"cursor_store",
+			"hermes_session",
 		},
 	}
 	return manifest
