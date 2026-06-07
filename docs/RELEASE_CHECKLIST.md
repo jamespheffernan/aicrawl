@@ -105,6 +105,7 @@ Expected result:
 - Local transcript and captured web payload fixtures are searchable after import.
 - Directory dry-runs for local transcript providers report aggregate source counts without writing the archive or emitting private source paths.
 - `status --json` reports `web_sync` freshness for ChatGPT and Claude web source kinds.
+- Stale or partial web endpoint captures fail before archive writes with a stable `contract_<state>` error prefix.
 - Reserved-term search succeeds.
 - Read-only SQL succeeds.
 - Mutating SQL is rejected.

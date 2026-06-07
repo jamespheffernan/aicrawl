@@ -673,6 +673,50 @@ func TestSyncWebDryRunReportsContractAndRedactsCapture(t *testing.T) {
 	}
 }
 
+func TestSyncWebStaleContractBlocksWrites(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
+
+	capturePath := filepath.Join(t.TempDir(), "stale-chatgpt-capture.json")
+	if err := os.WriteFile(capturePath, []byte(`[{"request":{"url":"https://chatgpt.com/api/changed-shape","method":"GET"}}]`), 0o600); err != nil {
+		t.Fatalf("write capture: %v", err)
+	}
+	sourcePath := filepath.Join("..", "..", "testdata", "redacted", "chatgpt-web-conversation.fixture.json")
+	var stdout bytes.Buffer
+	cli := New()
+	cli.stdout = &stdout
+	err := cli.Run(context.Background(), []string{
+		"sync", "web",
+		"--provider", "chatgpt",
+		"--source", sourcePath,
+		"--capture", capturePath,
+		"--json",
+	})
+	if err == nil {
+		t.Fatalf("sync web stale contract succeeded, want contract_stale error")
+	}
+	if !strings.Contains(err.Error(), "contract_stale") {
+		t.Fatalf("error = %q, want contract_stale", err.Error())
+	}
+	stdout.Reset()
+
+	if err := cli.Run(context.Background(), []string{"status", "--json"}); err != nil {
+		t.Fatalf("status after blocked stale contract: %v", err)
+	}
+	var status struct {
+		State string `json:"state"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &status); err != nil {
+		t.Fatalf("decode status: %v", err)
+	}
+	if status.State != "uninitialized" {
+		t.Fatalf("status after blocked stale contract = %q, want uninitialized", status.State)
+	}
+}
+
 func TestSyncWebSourceImportsSearchablePayloadAndIsIdempotent(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

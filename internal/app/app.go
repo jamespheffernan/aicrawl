@@ -649,7 +649,7 @@ func (a *App) syncWeb(ctx context.Context, globals globalOptions, args []string)
 		discovery = &report
 	}
 	if discovery != nil && discovery.State != "matched" && !dryRun {
-		return withExitCode(2, fmt.Errorf("endpoint contract is %s; refusing to sync captured web payloads", discovery.State))
+		return withExitCode(2, contractWriteError(discovery.State))
 	}
 	freshness := a.webFreshness(ctx, rt, session.SourceKind)
 	var sourceStats *websync.SourceStats
@@ -759,6 +759,13 @@ func inspectWebSource(path, provider string) (websync.SourceStats, error) {
 		return websync.SourceStats{}, fmt.Errorf("unsupported web provider %q", provider)
 	}
 	return stats, nil
+}
+
+func contractWriteError(state string) error {
+	if state == "" {
+		state = "unknown"
+	}
+	return fmt.Errorf("contract_%s: endpoint contract is %s; refusing to sync before archive writes", state, state)
 }
 
 func syncWebSource(ctx context.Context, ar *archive.Archive, path, provider string) (archive.ImportStats, error) {

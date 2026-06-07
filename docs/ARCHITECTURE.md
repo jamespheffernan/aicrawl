@@ -87,7 +87,7 @@ Live CDP fetches do not copy cookies, bearer tokens, session headers, or browser
 
 `schedule launchd` writes a macOS LaunchAgent plist that periodically invokes bounded `sync web` with either a configured CDP URL or a dedicated profile path. It does not load the agent or automate provider login.
 
-The network discovery parser consumes structured JSON captures, walks nested request objects, and emits only sanitized origins and paths. Query strings, fragments, headers, cookies, and authorization values are not included in the report.
+The network discovery parser consumes structured JSON captures, walks nested request objects, and emits only sanitized origins and paths. Query strings, fragments, headers, cookies, and authorization values are not included in the report. Non-dry-run sync with a non-matched capture fails before archive writes with a stable `contract_<state>` error such as `contract_stale`.
 
 ## Data Model
 

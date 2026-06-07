@@ -144,7 +144,7 @@ With `--dry-run`, the command does not write the archive. It reports:
 - `source`: candidate conversation, message, attachment, and warning counts when `--source` is present.
 - `freshness`: whether the archive has seen `chatgpt_web` or `claude_web` sync rows.
 
-`--capture` accepts a JSON browser network export or similar structured event dump. Only request URLs, methods, and status codes are inspected. Query strings, fragments, headers, cookies, and bearer tokens are not emitted in the report.
+`--capture` accepts a JSON browser network export or similar structured event dump. Only request URLs, methods, and status codes are inspected. Query strings, fragments, headers, cookies, and bearer tokens are not emitted in the report. In non-dry-run mode, a non-matched capture blocks before archive writes with a stable error prefix such as `contract_stale`, `contract_partial`, `contract_missing`, or `contract_empty`.
 
 Without `--source`, non-dry-run `sync web` uses `--cdp-url` when provided; otherwise it launches the dedicated provider profile and discovers the local CDP endpoint from Chrome's `DevToolsActivePort` file. It does not read browser cookies, tokens, headers, or session storage.
 
