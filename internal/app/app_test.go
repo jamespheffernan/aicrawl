@@ -1526,6 +1526,98 @@ func TestScheduleLaunchdWritesImportPlist(t *testing.T) {
 	}
 }
 
+func TestScheduleLaunchdLocalDefaultsWritesExistingRootPlists(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
+
+	codexRoot := filepath.Join(home, ".codex", "sessions")
+	claudeDesktopRoot := filepath.Join(home, "Library", "Application Support", "Claude")
+	hermesRoot := filepath.Join(home, ".hermes")
+	for _, path := range []string{codexRoot, claudeDesktopRoot, hermesRoot} {
+		if err := os.MkdirAll(path, 0o700); err != nil {
+			t.Fatalf("create default root %s: %v", path, err)
+		}
+	}
+
+	var stdout bytes.Buffer
+	cli := New()
+	cli.stdout = &stdout
+	if err := cli.Run(context.Background(), []string{
+		"schedule", "launchd",
+		"--local-defaults",
+		"--interval-minutes", "6",
+		"--aicrawl-bin", "/usr/local/bin/aicrawl",
+		"--json",
+	}); err != nil {
+		t.Fatalf("schedule launchd local defaults: %v", err)
+	}
+	var result launchdBatchResult
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("decode launchd local defaults result: %v", err)
+	}
+	if result.Mode != "local_defaults" || result.IntervalSeconds != 360 {
+		t.Fatalf("result header = %+v, want local defaults interval", result)
+	}
+	if len(result.Results) != 3 || len(result.Skipped) != 4 {
+		t.Fatalf("result counts = %d results/%d skipped, want 3/4: %+v", len(result.Results), len(result.Skipped), result)
+	}
+	byLabel := map[string]launchdResult{}
+	for _, item := range result.Results {
+		byLabel[item.Label] = item
+		data, err := os.ReadFile(item.Path)
+		if err != nil {
+			t.Fatalf("read generated plist %s: %v", item.Path, err)
+		}
+		plist := string(data)
+		for _, want := range []string{
+			"<string>/usr/local/bin/aicrawl</string>",
+			"<string>import</string>",
+			"<string>--provider</string>",
+			"<string>--json</string>",
+			"<integer>360</integer>",
+		} {
+			if !strings.Contains(plist, want) {
+				t.Fatalf("plist %s missing %q:\n%s", item.Path, want, plist)
+			}
+		}
+		if strings.Contains(plist, "token") || strings.Contains(plist, "Authorization") || strings.Contains(plist, "<key>Program</key>") {
+			t.Fatalf("plist contains disallowed material:\n%s", plist)
+		}
+	}
+	if byLabel["com.openclaw.aicrawl.import.codex"].ImportPath != codexRoot {
+		t.Fatalf("codex default = %+v, want %s", byLabel["com.openclaw.aicrawl.import.codex"], codexRoot)
+	}
+	if byLabel["com.openclaw.aicrawl.import.claude-desktop"].ImportPath != claudeDesktopRoot {
+		t.Fatalf("claude desktop default = %+v, want %s", byLabel["com.openclaw.aicrawl.import.claude-desktop"], claudeDesktopRoot)
+	}
+	if byLabel["com.openclaw.aicrawl.import.hermes"].ImportPath != hermesRoot {
+		t.Fatalf("hermes default = %+v, want %s", byLabel["com.openclaw.aicrawl.import.hermes"], hermesRoot)
+	}
+	for _, skipped := range result.Skipped {
+		if skipped.Reason != "missing" {
+			t.Fatalf("skipped default = %+v, want missing reason", skipped)
+		}
+	}
+}
+
+func TestScheduleLaunchdLocalDefaultsRejectsProviderOptions(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	cli := New()
+	err := cli.Run(context.Background(), []string{
+		"schedule", "launchd",
+		"--local-defaults",
+		"--provider", "codex",
+	})
+	if err == nil || !strings.Contains(err.Error(), "--local-defaults cannot be combined") {
+		t.Fatalf("error = %v, want local-default option rejection", err)
+	}
+}
+
 func TestScheduleLaunchdImportRejectsWebOptions(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

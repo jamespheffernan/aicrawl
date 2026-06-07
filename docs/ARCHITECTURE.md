@@ -91,7 +91,7 @@ Live list and organization calls must return successful provider responses. Indi
 
 `schedule launchd` writes a macOS LaunchAgent plist that periodically invokes bounded `sync web` with either a configured CDP URL or a dedicated profile path. It does not load the agent or automate provider login.
 
-For local transcript roots, `schedule launchd --import-path <path> --provider <provider>` writes a LaunchAgent that periodically runs `aicrawl import <path> --provider <provider> --json`. This gives OpenClaw, Codex, Gemini, Claude Code/Claude desktop local-agent, Cursor, and Hermes roots the same keep-current operating path as browser sync while relying on archive import idempotency to avoid duplicate rows.
+For local transcript roots, `schedule launchd --import-path <path> --provider <provider>` writes a LaunchAgent that periodically runs `aicrawl import <path> --provider <provider> --json`. `schedule launchd --local-defaults` discovers standard local roots that exist, including separate Claude Code CLI and Claude desktop/local-agent roots, and writes the matching import LaunchAgents in one pass. This gives OpenClaw, Codex, Gemini, Claude Code/Claude desktop local-agent, Cursor, and Hermes roots the same keep-current operating path as browser sync while relying on archive import idempotency to avoid duplicate rows.
 
 The network discovery parser consumes structured JSON captures, walks nested request objects, and emits only sanitized origins and paths. Query strings, fragments, headers, cookies, and authorization values are not included in the report. Non-dry-run sync with a non-matched capture fails before archive writes with a stable `contract_<state>` error such as `contract_stale`.
 

@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -26,6 +27,27 @@ type launchdResult struct {
 	NextSteps           []string `json:"next_steps"`
 }
 
+type launchdBatchResult struct {
+	Mode            string                 `json:"mode"`
+	IntervalSeconds int                    `json:"interval_seconds"`
+	Results         []launchdResult        `json:"results"`
+	Skipped         []launchdSkippedResult `json:"skipped,omitempty"`
+	NextSteps       []string               `json:"next_steps"`
+}
+
+type launchdSkippedResult struct {
+	Provider   string `json:"provider"`
+	ImportPath string `json:"import_path"`
+	Label      string `json:"label"`
+	Reason     string `json:"reason"`
+}
+
+type localDefaultImportRoot struct {
+	Provider string
+	Path     string
+	Label    string
+}
+
 func (a *App) schedule(ctx context.Context, globals globalOptions, args []string) error {
 	if len(args) == 0 || args[0] != "launchd" {
 		return withExitCode(2, fmt.Errorf("schedule requires subcommand launchd"))
@@ -34,17 +56,65 @@ func (a *App) schedule(ctx context.Context, globals globalOptions, args []string
 }
 
 func (a *App) scheduleLaunchd(ctx context.Context, globals globalOptions, args []string) error {
-	parsed, err := parseOptions(args, boolSet("json"), valueSet("provider", "import-path", "cdp-url", "profile", "browser", "remote-debugging-port", "chatgpt-app-cache", "interval-minutes", "max-conversations", "out", "aicrawl-bin", "label"))
+	parsed, err := parseOptions(args, boolSet("json", "local-defaults"), valueSet("provider", "import-path", "cdp-url", "profile", "browser", "remote-debugging-port", "chatgpt-app-cache", "interval-minutes", "max-conversations", "out", "aicrawl-bin", "label"))
 	if err != nil {
 		return withExitCode(2, err)
 	}
 	if len(parsed.positionals) != 0 {
 		return withExitCode(2, fmt.Errorf("schedule launchd does not accept positional arguments"))
 	}
+	if parsed.bools["local-defaults"] {
+		return a.scheduleLaunchdLocalDefaults(ctx, globals, parsed)
+	}
 	if strings.TrimSpace(parsed.values["import-path"]) != "" {
 		return a.scheduleLaunchdImport(ctx, globals, parsed)
 	}
 	return a.scheduleLaunchdWeb(ctx, globals, parsed)
+}
+
+func (a *App) scheduleLaunchdLocalDefaults(ctx context.Context, globals globalOptions, parsed parsedOptions) error {
+	if parsed.values["provider"] != "" || parsed.values["import-path"] != "" || parsed.values["cdp-url"] != "" || parsed.values["profile"] != "" || parsed.values["browser"] != "" || parsed.values["remote-debugging-port"] != "" || parsed.values["chatgpt-app-cache"] != "" || parsed.values["max-conversations"] != "" || parsed.values["out"] != "" || parsed.values["label"] != "" {
+		return withExitCode(2, fmt.Errorf("--local-defaults cannot be combined with provider, import-path, web-sync, --out, or --label options"))
+	}
+	intervalMinutes, err := parsePositiveOption("interval-minutes", parsed.values["interval-minutes"], 15)
+	if err != nil {
+		return withExitCode(2, err)
+	}
+	intervalSeconds := intervalMinutes * 60
+	result := launchdBatchResult{
+		Mode:            "local_defaults",
+		IntervalSeconds: intervalSeconds,
+		NextSteps: []string{
+			"Load the generated LaunchAgents with launchctl when you are ready.",
+			"Only roots that existed when this command ran were scheduled.",
+			"Run `aicrawl status --json` to see local_sources freshness after the agents run.",
+		},
+	}
+	for _, root := range defaultLocalImportRoots() {
+		info, err := os.Stat(root.Path)
+		switch {
+		case err == nil && info.IsDir():
+			item := buildLaunchdImportResult(globals, parsed, root.Provider, root.Path, root.Label, defaultLaunchAgentPath(root.Label), intervalSeconds)
+			if err := writeLaunchAgent(item.Path, item.Label, item.ProgramArguments, item.IntervalSeconds); err != nil {
+				return err
+			}
+			result.Results = append(result.Results, item)
+		case err == nil:
+			result.Skipped = append(result.Skipped, launchdSkippedResult{Provider: root.Provider, ImportPath: root.Path, Label: root.Label, Reason: "not_directory"})
+		case errors.Is(err, os.ErrNotExist):
+			result.Skipped = append(result.Skipped, launchdSkippedResult{Provider: root.Provider, ImportPath: root.Path, Label: root.Label, Reason: "missing"})
+		default:
+			result.Skipped = append(result.Skipped, launchdSkippedResult{Provider: root.Provider, ImportPath: root.Path, Label: root.Label, Reason: "unreadable"})
+		}
+	}
+	_ = ctx
+	if globals.format == "json" || parsed.bools["json"] {
+		return writeJSON(a.stdout, result)
+	}
+	if err := writeTextLine(a.stdout, "wrote %d LaunchAgents, skipped %d missing or unavailable roots", len(result.Results), len(result.Skipped)); err != nil {
+		return err
+	}
+	return writeTextLine(a.stdout, "load generated agents with launchctl when you are ready")
 }
 
 func (a *App) scheduleLaunchdImport(ctx context.Context, globals globalOptions, parsed parsedOptions) error {
@@ -63,32 +133,13 @@ func (a *App) scheduleLaunchdImport(ctx context.Context, globals globalOptions, 
 	if err != nil {
 		return withExitCode(2, err)
 	}
-	binPath := scheduleBinaryPath(parsed)
 	label := strings.TrimSpace(parsed.values["label"])
 	if label == "" {
 		label = "com.openclaw.aicrawl.import." + provider
 	}
 	outPath := scheduleOutputPath(parsed, label)
-	programArgs := []string{binPath}
-	if globals.configPath != "" {
-		programArgs = append(programArgs, "--config", expandPath(globals.configPath))
-	}
-	programArgs = append(programArgs,
-		"import", importPath,
-		"--provider", provider,
-		"--json",
-	)
-	result := launchdResult{
-		Path:             outPath,
-		Label:            label,
-		Mode:             "import",
-		Provider:         provider,
-		ImportPath:       importPath,
-		IntervalSeconds:  intervalMinutes * 60,
-		ProgramArguments: append([]string(nil), programArgs...),
-		NextSteps:        []string{"Load the LaunchAgent with launchctl when you are ready.", "Recurring imports are idempotent by source kind, provider, and source hash."},
-	}
-	if err := writeLaunchAgent(outPath, label, programArgs, result.IntervalSeconds); err != nil {
+	result := buildLaunchdImportResult(globals, parsed, provider, importPath, label, outPath, intervalMinutes*60)
+	if err := writeLaunchAgent(outPath, label, result.ProgramArguments, result.IntervalSeconds); err != nil {
 		return err
 	}
 	_ = ctx
@@ -99,6 +150,28 @@ func (a *App) scheduleLaunchdImport(ctx context.Context, globals globalOptions, 
 		return err
 	}
 	return writeTextLine(a.stdout, "load with: launchctl bootstrap gui/$(id -u) %s", outPath)
+}
+
+func buildLaunchdImportResult(globals globalOptions, parsed parsedOptions, provider, importPath, label, outPath string, intervalSeconds int) launchdResult {
+	programArgs := []string{scheduleBinaryPath(parsed)}
+	if globals.configPath != "" {
+		programArgs = append(programArgs, "--config", expandPath(globals.configPath))
+	}
+	programArgs = append(programArgs,
+		"import", importPath,
+		"--provider", provider,
+		"--json",
+	)
+	return launchdResult{
+		Path:             outPath,
+		Label:            label,
+		Mode:             "import",
+		Provider:         provider,
+		ImportPath:       importPath,
+		IntervalSeconds:  intervalSeconds,
+		ProgramArguments: append([]string(nil), programArgs...),
+		NextSteps:        []string{"Load the LaunchAgent with launchctl when you are ready.", "Recurring imports are idempotent by source kind, provider, and source hash."},
+	}
 }
 
 func (a *App) scheduleLaunchdWeb(ctx context.Context, globals globalOptions, parsed parsedOptions) error {
@@ -225,6 +298,50 @@ func scheduleOutputPath(parsed parsedOptions, label string) string {
 		return defaultLaunchAgentPath(label)
 	}
 	return expandPath(outPath)
+}
+
+func defaultLocalImportRoots() []localDefaultImportRoot {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		home = "~"
+	}
+	return []localDefaultImportRoot{
+		{
+			Provider: "openclaw",
+			Path:     filepath.Join(home, ".openclaw", "agents", "main", "sessions"),
+			Label:    "com.openclaw.aicrawl.import.openclaw",
+		},
+		{
+			Provider: "codex",
+			Path:     filepath.Join(home, ".codex", "sessions"),
+			Label:    "com.openclaw.aicrawl.import.codex",
+		},
+		{
+			Provider: "gemini",
+			Path:     filepath.Join(home, ".gemini"),
+			Label:    "com.openclaw.aicrawl.import.gemini",
+		},
+		{
+			Provider: "claude-code",
+			Path:     filepath.Join(home, ".claude", "projects"),
+			Label:    "com.openclaw.aicrawl.import.claude-code-cli",
+		},
+		{
+			Provider: "claude-code",
+			Path:     filepath.Join(home, "Library", "Application Support", "Claude"),
+			Label:    "com.openclaw.aicrawl.import.claude-desktop",
+		},
+		{
+			Provider: "cursor",
+			Path:     filepath.Join(home, "Library", "Application Support", "Cursor"),
+			Label:    "com.openclaw.aicrawl.import.cursor",
+		},
+		{
+			Provider: "hermes",
+			Path:     filepath.Join(home, ".hermes"),
+			Label:    "com.openclaw.aicrawl.import.hermes",
+		},
+	}
 }
 
 func defaultLaunchAgentPath(label string) string {

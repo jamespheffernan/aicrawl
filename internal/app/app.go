@@ -109,6 +109,7 @@ Usage:
   aicrawl sync web --provider chatgpt|claude [--source <json-or-zip>] [--profile <dir> | --cdp-url <url>] [--browser <path>] [--remote-debugging-port 0] [--capture <network.json>] [--chatgpt-app-cache <dir>] [--max-conversations 50] [--dry-run] [--json]
   aicrawl schedule launchd --provider chatgpt|claude [--cdp-url <url> | --profile <dir>] [--browser <path>] [--remote-debugging-port 0] [--chatgpt-app-cache <dir>] [--interval-minutes 15] [--max-conversations 50] [--out <plist>] [--json]
   aicrawl schedule launchd --provider openclaw|codex|gemini|claude-code|cursor|hermes --import-path <path> [--interval-minutes 15] [--out <plist>] [--json]
+  aicrawl schedule launchd --local-defaults [--interval-minutes 15] [--json]
   aicrawl conversations [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|cursor|hermes|all] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit 50]
   aicrawl messages --conversation <id> [--path current|all] [--around <message-id>] [--context 5 | --before N --after N]
   aicrawl search <query> [--group messages|conversations] [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|cursor|hermes|all] [--scope visible|transcript|attachments|internal|all] [--role user|assistant|system|developer|tool|attachment|unknown|all] [--path current|all] [--sort relevance|recent] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit 25]

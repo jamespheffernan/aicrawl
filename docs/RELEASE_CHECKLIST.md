@@ -85,6 +85,8 @@ touch "$SMOKE/chatgpt-app-cache/conversations-v3-fixture/chatgpt-fixture-cache-i
 "$BIN" schedule launchd --provider chatgpt --cdp-url http://127.0.0.1:9222 --out "$SMOKE/aicrawl-sync.plist" --json
 "$BIN" schedule launchd --provider chatgpt --profile "$SMOKE/chatgpt-profile" --out "$SMOKE/aicrawl-sync-profile.plist" --json
 "$BIN" schedule launchd --provider codex --import-path "$SMOKE/codex-root" --out "$SMOKE/aicrawl-import-codex.plist" --json
+mkdir -p "$HOME/.codex/sessions" "$HOME/Library/Application Support/Claude" "$HOME/.hermes"
+"$BIN" schedule launchd --local-defaults --interval-minutes 5 --json
 "$BIN" export markdown --out "$SMOKE/exported-md"
 "$BIN" crawlbar manifest --out "$SMOKE/aicrawl.crawlbar.json"
 ```
