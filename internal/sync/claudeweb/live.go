@@ -48,6 +48,9 @@ func FetchLive(ctx context.Context, fetcher Fetcher, opts LiveOptions) ([]byte, 
 		if err != nil {
 			return nil, fmt.Errorf("fetch Claude conversation list: %w", err)
 		}
+		if !okStatus(listResp.Status) {
+			return nil, fmt.Errorf("fetch Claude conversation list returned HTTP status %d", listResp.Status)
+		}
 		ids, err := extractConversationIDs(listResp.Body, "chat_conversations", "conversations")
 		if err != nil {
 			return nil, fmt.Errorf("parse Claude conversation list: %w", err)
@@ -64,6 +67,12 @@ func FetchLive(ctx context.Context, fetcher Fetcher, opts LiveOptions) ([]byte, 
 			detailResp, err := fetcher.Fetch(ctx, detailURL)
 			if err != nil {
 				return nil, fmt.Errorf("fetch Claude conversation detail: %w", err)
+			}
+			if inaccessibleStatus(detailResp.Status) {
+				continue
+			}
+			if !okStatus(detailResp.Status) {
+				return nil, fmt.Errorf("fetch Claude conversation detail returned HTTP status %d", detailResp.Status)
 			}
 			raw, err := unwrapConversation(detailResp.Body, "chat_messages")
 			if err != nil {
@@ -85,6 +94,9 @@ func fetchOrganizationID(ctx context.Context, fetcher Fetcher) (string, error) {
 	resp, err := fetcher.Fetch(ctx, claudeOrigin+"/api/organizations")
 	if err != nil {
 		return "", fmt.Errorf("fetch Claude organizations: %w", err)
+	}
+	if !okStatus(resp.Status) {
+		return "", fmt.Errorf("fetch Claude organizations returned HTTP status %d", resp.Status)
 	}
 	ids, err := extractConversationIDs(resp.Body, "organizations")
 	if err != nil {
@@ -201,4 +213,12 @@ func bounded(value, fallback, minValue, maxValue int) int {
 		return maxValue
 	}
 	return value
+}
+
+func okStatus(status int) bool {
+	return status >= 200 && status < 300
+}
+
+func inaccessibleStatus(status int) bool {
+	return status == 403 || status == 404 || status == 410
 }

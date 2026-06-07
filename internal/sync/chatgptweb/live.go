@@ -44,6 +44,9 @@ func FetchLive(ctx context.Context, fetcher Fetcher, opts LiveOptions) ([]byte, 
 		if err != nil {
 			return nil, fmt.Errorf("fetch ChatGPT conversation list: %w", err)
 		}
+		if !okStatus(listResp.Status) {
+			return nil, fmt.Errorf("fetch ChatGPT conversation list returned HTTP status %d", listResp.Status)
+		}
 		ids, err := extractConversationIDs(listResp.Body, "items", "conversations")
 		if err != nil {
 			return nil, fmt.Errorf("parse ChatGPT conversation list: %w", err)
@@ -60,6 +63,12 @@ func FetchLive(ctx context.Context, fetcher Fetcher, opts LiveOptions) ([]byte, 
 			detailResp, err := fetcher.Fetch(ctx, detailURL)
 			if err != nil {
 				return nil, fmt.Errorf("fetch ChatGPT conversation detail: %w", err)
+			}
+			if inaccessibleStatus(detailResp.Status) {
+				continue
+			}
+			if !okStatus(detailResp.Status) {
+				return nil, fmt.Errorf("fetch ChatGPT conversation detail returned HTTP status %d", detailResp.Status)
 			}
 			raw, err := unwrapConversation(detailResp.Body, "mapping")
 			if err != nil {
@@ -182,4 +191,12 @@ func bounded(value, fallback, minValue, maxValue int) int {
 		return maxValue
 	}
 	return value
+}
+
+func okStatus(status int) bool {
+	return status >= 200 && status < 300
+}
+
+func inaccessibleStatus(status int) bool {
+	return status == 403 || status == 404 || status == 410
 }

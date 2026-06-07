@@ -85,6 +85,8 @@ flowchart LR
 
 Live CDP fetches do not copy cookies, bearer tokens, session headers, or browser storage into config. The fetched detail batch is written to a private temporary cache file, imported through the same source-hash/idempotency path as captured payload files, then removed.
 
+Live list and organization calls must return successful provider responses. Individual conversation detail calls that return 403, 404, or 410 are skipped so deleted, archived, or inaccessible conversations do not block importing the rest of the batch and do not trigger destructive archive deletion.
+
 `schedule launchd` writes a macOS LaunchAgent plist that periodically invokes bounded `sync web` with either a configured CDP URL or a dedicated profile path. It does not load the agent or automate provider login.
 
 The network discovery parser consumes structured JSON captures, walks nested request objects, and emits only sanitized origins and paths. Query strings, fragments, headers, cookies, and authorization values are not included in the report. Non-dry-run sync with a non-matched capture fails before archive writes with a stable `contract_<state>` error such as `contract_stale`.

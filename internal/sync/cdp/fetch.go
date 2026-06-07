@@ -166,9 +166,6 @@ func (s *Session) Fetch(ctx context.Context, requestURL string) (Response, error
 		if err := json.Unmarshal(resp.Result.Result.Value, &value); err != nil {
 			return Response{}, fmt.Errorf("decode CDP fetch value: %w", err)
 		}
-		if value.Status < 200 || value.Status >= 300 {
-			return Response{}, fmt.Errorf("provider fetch returned HTTP status %d", value.Status)
-		}
 		return Response{Status: value.Status, URL: value.URL, Body: []byte(value.Text)}, nil
 	}
 }
