@@ -1130,6 +1130,53 @@ func TestSyncWebLiveCDPImportsSearchableChatGPTPayload(t *testing.T) {
 	if len(hits) != 1 {
 		t.Fatalf("hits = %+v, want one live CDP hit", hits)
 	}
+	stdout.Reset()
+
+	if err := cli.Run(context.Background(), []string{
+		"sync", "web",
+		"--provider", "chatgpt",
+		"--cdp-url", server.URL,
+		"--max-conversations", "1",
+		"--json",
+	}); err != nil {
+		t.Fatalf("repeat sync web live CDP: %v", err)
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &stats); err != nil {
+		t.Fatalf("decode repeat sync stats: %v", err)
+	}
+	if stats.Conversations != 0 || stats.Messages != 0 || stats.SourceKind != "chatgpt_web" {
+		t.Fatalf("repeat live sync stats = %+v, want no-change sync", stats)
+	}
+	stdout.Reset()
+
+	if err := cli.Run(context.Background(), []string{"status", "--json"}); err != nil {
+		t.Fatalf("status after live CDP import: %v", err)
+	}
+	var status struct {
+		WebSync []struct {
+			Provider       string `json:"provider"`
+			CursorKind     string `json:"cursor_kind"`
+			CursorAt       string `json:"cursor_at"`
+			LastCheckedAt  string `json:"last_checked_at"`
+			CandidateCount int64  `json:"candidate_count"`
+		} `json:"web_sync"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &status); err != nil {
+		t.Fatalf("decode live status: %v", err)
+	}
+	var found bool
+	for _, state := range status.WebSync {
+		if state.Provider != "chatgpt" {
+			continue
+		}
+		found = true
+		if state.CursorKind != "provider_updated_at" || state.CursorAt == "" || state.LastCheckedAt == "" || state.CandidateCount != 1 {
+			t.Fatalf("chatgpt live sync state = %+v, want provider cursor", state)
+		}
+	}
+	if !found {
+		t.Fatalf("status missing chatgpt web sync state: %+v", status.WebSync)
+	}
 }
 
 func TestSyncWebDryRunCDPReportsLiveListCandidatesWithoutCreatingArchive(t *testing.T) {
@@ -1310,11 +1357,12 @@ func newFakeChatGPTCDPServer(t *testing.T) *httptest.Server {
 				status := 200
 				switch {
 				case strings.Contains(expression, "/backend-api/conversations?"):
-					body = `{"items":[{"id":"live-cdp-chatgpt"}]}`
+					body = `{"items":[{"id":"live-cdp-chatgpt","update_time":1760000060}]}`
 				case strings.Contains(expression, "/backend-api/conversation/live-cdp-chatgpt"):
 					body = `{
   "id": "live-cdp-chatgpt",
   "title": "Live CDP ChatGPT",
+  "update_time": 1760000060,
   "mapping": {
     "assistant": {
       "id": "assistant",

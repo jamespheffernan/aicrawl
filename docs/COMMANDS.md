@@ -68,7 +68,7 @@ aicrawl status
 aicrawl status --json
 ```
 
-JSON output includes a `web_sync` array for `chatgpt_web` and `claude_web` with freshness state, last import timestamp, and synced conversation/message counts. This lets operators see stale or never-run web syncs from the normal status surface without running provider-specific dry-runs.
+JSON output includes a `web_sync` array for `chatgpt_web` and `claude_web` with freshness state, last import timestamp, last checked timestamp, synced conversation/message counts, candidate count, and cursor metadata. This lets operators see stale or never-run web syncs from the normal status surface without running provider-specific dry-runs.
 
 ## `doctor`
 
@@ -131,7 +131,7 @@ aicrawl sync web --provider chatgpt --cdp-url http://127.0.0.1:9222 --capture ./
 
 With `--source`, the command imports captured provider conversation detail payloads into the local archive using source kinds `chatgpt_web` or `claude_web`. Imports are idempotent by source kind, provider, and source hash.
 
-With `--cdp-url` and no `--source`, non-dry-run mode attaches to an already running browser's Chrome DevTools endpoint, finds or opens a provider page target, and runs same-origin `fetch()` calls from that page context. Authentication stays inside the browser profile. The fetched detail batch is written to a private temporary cache file, imported through the normal archive path, then removed.
+With `--cdp-url` and no `--source`, non-dry-run mode attaches to an already running browser's Chrome DevTools endpoint, finds or opens a provider page target, and runs same-origin `fetch()` calls from that page context. Authentication stays inside the browser profile. The fetched detail batch is written to a private temporary cache file, imported through the normal archive path, then removed. When the provider list/detail payloads expose update timestamps, live sync records a `provider_updated_at` cursor and later runs skip older list candidates. A no-change live sync updates `last_checked_at` and exits successfully without fetching detail payloads or writing archive rows.
 
 With `--profile` and no `--cdp-url`, non-dry-run mode launches Chrome/Chromium/Microsoft Edge with a dedicated `--user-data-dir`, local remote debugging bound to `127.0.0.1`, and the provider home page. Chrome's ephemeral `--remote-debugging-port=0` behavior is the default; pass `--remote-debugging-port <port>` only when you need a stable local port. If the profile is new, the command reports `login_required`, leaves the archive untouched, and tells you to log in normally before rerunning sync. Pass `--browser <path>` or set `AICRAWL_BROWSER` when the browser executable is not in a common location.
 

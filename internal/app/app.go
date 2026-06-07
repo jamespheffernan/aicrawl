@@ -229,6 +229,11 @@ type statusWebSync struct {
 	State             string `json:"state"`
 	LastImportID      string `json:"last_import_id,omitempty"`
 	LastImportAt      string `json:"last_import_at,omitempty"`
+	LastCheckedAt     string `json:"last_checked_at,omitempty"`
+	CursorKind        string `json:"cursor_kind,omitempty"`
+	CursorValue       string `json:"cursor_value,omitempty"`
+	CursorAt          string `json:"cursor_at,omitempty"`
+	CandidateCount    int64  `json:"candidate_count,omitempty"`
 	ConversationCount int64  `json:"conversation_count,omitempty"`
 	MessageCount      int64  `json:"message_count,omitempty"`
 }
@@ -250,6 +255,11 @@ func (a *App) webSyncStatus(ctx context.Context, rt runtime) []statusWebSync {
 			State:             freshness.State,
 			LastImportID:      freshness.LastImportID,
 			LastImportAt:      freshness.LastImportAt,
+			LastCheckedAt:     freshness.LastCheckedAt,
+			CursorKind:        freshness.CursorKind,
+			CursorValue:       freshness.CursorValue,
+			CursorAt:          freshness.CursorAt,
+			CandidateCount:    freshness.CandidateCount,
 			ConversationCount: freshness.ConversationCount,
 			MessageCount:      freshness.MessageCount,
 		})
@@ -836,6 +846,17 @@ func syncWebLive(ctx context.Context, ar *archive.Archive, rt runtime, provider 
 	if err != nil {
 		return archive.ImportStats{}, err
 	}
+	state, ok, err := ar.SyncState(ctx, spec.SourceKind)
+	if err != nil {
+		return archive.ImportStats{}, err
+	}
+	cursorAfter := ""
+	if ok && state.CursorKind == "provider_updated_at" {
+		cursorAfter = state.CursorAt
+		if cursorAfter == "" {
+			cursorAfter = state.CursorValue
+		}
+	}
 	cdpSession, err := cdp.Open(ctx, cdp.Options{
 		Endpoint:       session.CDPURL,
 		HomeURL:        spec.HomeURL,
@@ -846,23 +867,66 @@ func syncWebLive(ctx context.Context, ar *archive.Archive, rt runtime, provider 
 	}
 	defer cdpSession.Close(1000, "")
 	var payload []byte
+	var cursor archive.SyncCursor
+	var warnings []string
+	var noChanges bool
 	switch provider {
 	case chatgptweb.Provider:
-		payload, err = chatgptweb.FetchLive(ctx, chatGPTCDPFetcher{session: cdpSession}, chatgptweb.LiveOptions{MaxConversations: maxConversations})
+		result, fetchErr := chatgptweb.FetchLiveWithCursor(ctx, chatGPTCDPFetcher{session: cdpSession}, chatgptweb.LiveOptions{MaxConversations: maxConversations, CursorAfter: cursorAfter})
+		err = fetchErr
+		payload = result.Payload
+		warnings = append(warnings, result.Warnings...)
+		noChanges = result.NoChanges
+		cursor = archive.SyncCursor{Kind: result.Cursor.Kind, Value: result.Cursor.Value, At: result.Cursor.At, CandidateCount: result.Cursor.CandidateCount}
 	case claudeweb.Provider:
-		payload, err = claudeweb.FetchLive(ctx, claudeCDPFetcher{session: cdpSession}, claudeweb.LiveOptions{MaxConversations: maxConversations})
+		result, fetchErr := claudeweb.FetchLiveWithCursor(ctx, claudeCDPFetcher{session: cdpSession}, claudeweb.LiveOptions{MaxConversations: maxConversations, CursorAfter: cursorAfter})
+		err = fetchErr
+		payload = result.Payload
+		warnings = append(warnings, result.Warnings...)
+		noChanges = result.NoChanges
+		cursor = archive.SyncCursor{Kind: result.Cursor.Kind, Value: result.Cursor.Value, At: result.Cursor.At, CandidateCount: result.Cursor.CandidateCount}
 	default:
 		err = fmt.Errorf("unsupported web provider %q", provider)
 	}
 	if err != nil {
 		return archive.ImportStats{}, err
 	}
+	if noChanges {
+		if cursor.Kind == "" && cursorAfter != "" {
+			cursor = archive.SyncCursor{Kind: "provider_updated_at", Value: cursorAfter, At: cursorAfter}
+		}
+		if err := ar.UpdateSyncCursor(ctx, spec.SourceKind, cursor); err != nil {
+			return archive.ImportStats{}, err
+		}
+		return webNoChangeStats(provider, spec.SourceKind, warnings), nil
+	}
 	tempPath, cleanup, err := writeLiveSyncTemp(rt, provider, payload)
 	if err != nil {
 		return archive.ImportStats{}, err
 	}
 	defer cleanup()
-	return syncWebSource(ctx, ar, tempPath, provider)
+	stats, err := syncWebSource(ctx, ar, tempPath, provider)
+	if err != nil {
+		return archive.ImportStats{}, err
+	}
+	stats.Warnings = append(stats.Warnings, warnings...)
+	if cursor.Kind != "" {
+		if err := ar.UpdateSyncCursor(ctx, spec.SourceKind, cursor); err != nil {
+			return archive.ImportStats{}, err
+		}
+	}
+	return stats, nil
+}
+
+func webNoChangeStats(provider, sourceKind string, warnings []string) archive.ImportStats {
+	now := timefmt.FormatUTC(time.Now())
+	return archive.ImportStats{
+		Provider:        provider,
+		SourceKind:      sourceKind,
+		Warnings:        warnings,
+		CompletedAt:     now,
+		PrivacyReminder: "No new web conversations found. aicrawl did not fetch detail payloads or write archive rows.",
+	}
 }
 
 type chatGPTCDPFetcher struct {
@@ -944,6 +1008,11 @@ func (a *App) webFreshness(ctx context.Context, rt runtime, sourceKind string) w
 		SourceKind:        state.SourceKind,
 		LastImportID:      state.LastImportID,
 		LastImportAt:      state.LastImportAt,
+		LastCheckedAt:     state.LastCheckedAt,
+		CursorKind:        state.CursorKind,
+		CursorValue:       state.CursorValue,
+		CursorAt:          state.CursorAt,
+		CandidateCount:    state.CandidateCount,
 		ConversationCount: state.ConversationCount,
 		MessageCount:      state.MessageCount,
 	}

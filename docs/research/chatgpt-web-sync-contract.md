@@ -18,7 +18,7 @@ Accepted list shapes:
 - top-level `conversations` array
 - top-level array
 
-Conversation IDs are read from `id`, `uuid`, or `conversation_id`.
+Conversation IDs are read from `id`, `uuid`, or `conversation_id`. Cursor timestamps are read from `update_time`, `updated_at`, `updateTime`, `last_message_at`, `create_time`, or `created_at` when present.
 
 Detail endpoint:
 
@@ -32,7 +32,7 @@ Accepted detail shapes:
 - wrapper object with `conversation.mapping`
 - wrapper object with `data.mapping`
 
-The fetched detail batch is imported through the existing ChatGPT web parser, which expects the ChatGPT conversation graph shape and preserves raw payloads.
+The fetched detail batch is imported through the existing ChatGPT web parser, which expects the ChatGPT conversation graph shape and preserves raw payloads. When list or detail payloads expose timestamps, live sync records a `provider_updated_at` cursor and later skips list candidates at or before that cursor. If nothing new is found, sync updates `last_checked_at` without fetching detail payloads or writing archive rows.
 
 ## Drift Behavior
 

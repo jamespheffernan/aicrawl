@@ -49,6 +49,46 @@ func TestFetchLiveBuildsChatGPTDetailArray(t *testing.T) {
 	}
 }
 
+func TestFetchLiveWithCursorSkipsOlderChatGPTDetails(t *testing.T) {
+	result, err := FetchLiveWithCursor(context.Background(), fakeStatusFetcher{
+		"https://chatgpt.com/backend-api/conversations?offset=0&limit=2&order=updated": {
+			Status: 200,
+			Body:   []byte(`{"items":[{"id":"chatgpt-live-old","update_time":1760000000}]}`),
+		},
+	}, LiveOptions{MaxConversations: 2, PageSize: 2, CursorAfter: "2025-10-09T08:53:20.000000000Z"})
+	if err != nil {
+		t.Fatalf("FetchLiveWithCursor: %v", err)
+	}
+	if !result.NoChanges || len(result.Payload) != 0 || result.CandidateConversations != 1 {
+		t.Fatalf("result = %+v, want one skipped old candidate and no payload", result)
+	}
+	if result.Cursor.Kind != "provider_updated_at" || result.Cursor.At == "" {
+		t.Fatalf("cursor = %+v, want provider updated cursor", result.Cursor)
+	}
+}
+
+func TestFetchLiveWithCursorRecordsChatGPTProviderWatermark(t *testing.T) {
+	result, err := FetchLiveWithCursor(context.Background(), fakeStatusFetcher{
+		"https://chatgpt.com/backend-api/conversations?offset=0&limit=1&order=updated": {
+			Status: 200,
+			Body:   []byte(`{"items":[{"id":"chatgpt-live-1","update_time":1760000060}]}`),
+		},
+		"https://chatgpt.com/backend-api/conversation/chatgpt-live-1": {
+			Status: 200,
+			Body:   []byte(chatGPTDetail("chatgpt-live-1", "one")),
+		},
+	}, LiveOptions{MaxConversations: 1, PageSize: 1})
+	if err != nil {
+		t.Fatalf("FetchLiveWithCursor: %v", err)
+	}
+	if result.NoChanges || result.FetchedConversations != 1 || len(result.Payload) == 0 {
+		t.Fatalf("result = %+v, want one fetched conversation", result)
+	}
+	if result.Cursor.Kind != "provider_updated_at" || result.Cursor.At != "2025-10-09T08:54:20.000000000Z" || result.Cursor.CandidateCount != 1 {
+		t.Fatalf("cursor = %+v, want normalized provider watermark", result.Cursor)
+	}
+}
+
 func TestInspectLiveCountsChatGPTListCandidatesWithoutDetails(t *testing.T) {
 	inspection, err := InspectLive(context.Background(), fakeStatusFetcher{
 		"https://chatgpt.com/backend-api/conversations?offset=0&limit=2&order=updated": {

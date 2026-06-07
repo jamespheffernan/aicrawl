@@ -5,7 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/url"
+	"strconv"
+	"time"
+
+	"github.com/openclaw/aicrawl/internal/timefmt"
 )
 
 const (
@@ -27,10 +32,27 @@ type FetchResponse struct {
 type LiveOptions struct {
 	MaxConversations int
 	PageSize         int
+	CursorAfter      string
 }
 
 type LiveInspection struct {
 	CandidateConversations int
+	Warnings               []string
+}
+
+type LiveCursor struct {
+	Kind           string
+	Value          string
+	At             string
+	CandidateCount int64
+}
+
+type LiveResult struct {
+	Payload                []byte
+	Cursor                 LiveCursor
+	CandidateConversations int
+	FetchedConversations   int
+	NoChanges              bool
 	Warnings               []string
 }
 
@@ -76,60 +98,99 @@ func InspectLive(ctx context.Context, fetcher Fetcher, opts LiveOptions) (LiveIn
 }
 
 func FetchLive(ctx context.Context, fetcher Fetcher, opts LiveOptions) ([]byte, error) {
+	result, err := FetchLiveWithCursor(ctx, fetcher, opts)
+	if err != nil {
+		return nil, err
+	}
+	if result.NoChanges || len(result.Payload) == 0 {
+		return nil, fmt.Errorf("ChatGPT live sync found no importable conversations")
+	}
+	return result.Payload, nil
+}
+
+func FetchLiveWithCursor(ctx context.Context, fetcher Fetcher, opts LiveOptions) (LiveResult, error) {
 	if fetcher == nil {
-		return nil, fmt.Errorf("ChatGPT live fetcher is required")
+		return LiveResult{}, fmt.Errorf("ChatGPT live fetcher is required")
 	}
 	maxConversations := bounded(opts.MaxConversations, defaultMaxConversations, 1, 1000)
 	pageSize := bounded(opts.PageSize, defaultPageSize, 1, 100)
 	var conversations []json.RawMessage
 	seen := map[string]bool{}
+	result := LiveResult{}
+	maxObservedAt := ""
 	for offset := 0; len(conversations) < maxConversations; offset += pageSize {
 		limit := min(pageSize, maxConversations-len(conversations))
 		listURL := fmt.Sprintf("%s/backend-api/conversations?offset=%d&limit=%d&order=updated", chatGPTOrigin, offset, limit)
 		listResp, err := fetcher.Fetch(ctx, listURL)
 		if err != nil {
-			return nil, fmt.Errorf("fetch ChatGPT conversation list: %w", err)
+			return LiveResult{}, fmt.Errorf("fetch ChatGPT conversation list: %w", err)
 		}
 		if !okStatus(listResp.Status) {
-			return nil, fmt.Errorf("fetch ChatGPT conversation list returned HTTP status %d", listResp.Status)
+			return LiveResult{}, fmt.Errorf("fetch ChatGPT conversation list returned HTTP status %d", listResp.Status)
 		}
-		ids, err := extractConversationIDs(listResp.Body, "items", "conversations")
+		items, err := extractConversationItems(listResp.Body, []string{"update_time", "updated_at", "updateTime", "last_message_at", "create_time", "created_at"}, "items", "conversations")
 		if err != nil {
-			return nil, fmt.Errorf("parse ChatGPT conversation list: %w", err)
+			return LiveResult{}, fmt.Errorf("parse ChatGPT conversation list: %w", err)
 		}
-		if len(ids) == 0 {
+		if len(items) == 0 {
 			break
 		}
-		for _, id := range ids {
-			if id == "" || seen[id] || len(conversations) >= maxConversations {
+		stopAfterPage := false
+		for _, item := range items {
+			if item.UpdatedAt != "" && item.UpdatedAt > maxObservedAt {
+				maxObservedAt = item.UpdatedAt
+			}
+			if item.ID == "" || seen[item.ID] || len(conversations) >= maxConversations {
 				continue
 			}
-			seen[id] = true
-			detailURL := chatGPTOrigin + "/backend-api/conversation/" + url.PathEscape(id)
+			seen[item.ID] = true
+			result.CandidateConversations++
+			if opts.CursorAfter != "" && item.UpdatedAt != "" && item.UpdatedAt <= opts.CursorAfter {
+				stopAfterPage = true
+				continue
+			}
+			detailURL := chatGPTOrigin + "/backend-api/conversation/" + url.PathEscape(item.ID)
 			detailResp, err := fetcher.Fetch(ctx, detailURL)
 			if err != nil {
-				return nil, fmt.Errorf("fetch ChatGPT conversation detail: %w", err)
+				return LiveResult{}, fmt.Errorf("fetch ChatGPT conversation detail: %w", err)
 			}
 			if inaccessibleStatus(detailResp.Status) {
 				continue
 			}
 			if !okStatus(detailResp.Status) {
-				return nil, fmt.Errorf("fetch ChatGPT conversation detail returned HTTP status %d", detailResp.Status)
+				return LiveResult{}, fmt.Errorf("fetch ChatGPT conversation detail returned HTTP status %d", detailResp.Status)
 			}
 			raw, err := unwrapConversation(detailResp.Body, "mapping")
 			if err != nil {
-				return nil, fmt.Errorf("parse ChatGPT conversation detail: %w", err)
+				return LiveResult{}, fmt.Errorf("parse ChatGPT conversation detail: %w", err)
+			}
+			if detailAt := conversationTimestamp(raw, []string{"update_time", "updated_at", "create_time", "created_at"}); detailAt != "" && detailAt > maxObservedAt {
+				maxObservedAt = detailAt
 			}
 			conversations = append(conversations, raw)
 		}
-		if len(ids) < limit {
+		if stopAfterPage || len(items) < limit {
 			break
 		}
 	}
-	if len(conversations) == 0 {
-		return nil, fmt.Errorf("ChatGPT live sync found no importable conversations")
+	if maxObservedAt != "" {
+		result.Cursor = LiveCursor{
+			Kind:           "provider_updated_at",
+			Value:          maxObservedAt,
+			At:             maxObservedAt,
+			CandidateCount: int64(result.CandidateConversations),
+		}
 	}
-	return marshalRawArray(conversations), nil
+	if len(conversations) == 0 {
+		if opts.CursorAfter != "" {
+			result.NoChanges = true
+			return result, nil
+		}
+		return LiveResult{}, fmt.Errorf("ChatGPT live sync found no importable conversations")
+	}
+	result.Payload = marshalRawArray(conversations)
+	result.FetchedConversations = len(conversations)
+	return result, nil
 }
 
 func extractConversationIDs(data []byte, arrayKeys ...string) ([]string, error) {
@@ -152,6 +213,82 @@ func extractConversationIDs(data []byte, arrayKeys ...string) ([]string, error) 
 		}
 	}
 	return ids, nil
+}
+
+type conversationListItem struct {
+	ID        string
+	UpdatedAt string
+}
+
+func extractConversationItems(data []byte, timestampKeys []string, arrayKeys ...string) ([]conversationListItem, error) {
+	var payload any
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return nil, err
+	}
+	rawItems := extractArray(payload, arrayKeys...)
+	items := make([]conversationListItem, 0, len(rawItems))
+	for _, raw := range rawItems {
+		var object map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &object); err != nil {
+			continue
+		}
+		item := conversationListItem{UpdatedAt: timestampField(object, timestampKeys)}
+		for _, key := range []string{"id", "uuid", "conversation_id"} {
+			if id := stringField(object, key); id != "" {
+				item.ID = id
+				break
+			}
+		}
+		if item.ID != "" {
+			items = append(items, item)
+		}
+	}
+	return items, nil
+}
+
+func conversationTimestamp(raw json.RawMessage, keys []string) string {
+	var object map[string]json.RawMessage
+	if json.Unmarshal(raw, &object) != nil {
+		return ""
+	}
+	return timestampField(object, keys)
+}
+
+func timestampField(object map[string]json.RawMessage, keys []string) string {
+	for _, key := range keys {
+		raw, ok := object[key]
+		if !ok {
+			continue
+		}
+		if value := timestampRaw(raw); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func timestampRaw(raw json.RawMessage) string {
+	var number json.Number
+	if err := json.Unmarshal(raw, &number); err == nil {
+		if parsed, err := strconv.ParseFloat(number.String(), 64); err == nil {
+			sec, frac := math.Modf(parsed)
+			return timefmt.FormatUTC(time.Unix(int64(sec), int64(frac*1e9)))
+		}
+	}
+	var value string
+	if err := json.Unmarshal(raw, &value); err != nil || value == "" {
+		return ""
+	}
+	if parsedNumber, err := strconv.ParseFloat(value, 64); err == nil {
+		sec, frac := math.Modf(parsedNumber)
+		return timefmt.FormatUTC(time.Unix(int64(sec), int64(frac*1e9)))
+	}
+	for _, layout := range []string{time.RFC3339Nano, time.RFC3339, "2006-01-02T15:04:05.000000Z"} {
+		if parsed, err := time.Parse(layout, value); err == nil {
+			return timefmt.FormatUTC(parsed)
+		}
+	}
+	return ""
 }
 
 func extractArray(payload any, keys ...string) []json.RawMessage {

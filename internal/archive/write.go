@@ -54,7 +54,10 @@ func (a *Archive) ImportParsed(ctx context.Context, sourcePath string, parsed Pa
 		}
 		if ok {
 			stats = existing
-			return markImportSeen(ctx, tx, importID, now)
+			if err := markImportSeen(ctx, tx, importID, now); err != nil {
+				return err
+			}
+			return upsertSyncState(ctx, tx, parsed.SourceKind, importID, now, stats.Conversations, stats.Messages, sourceHashCursor(sourceHash))
 		}
 		if err := upsertProvider(ctx, tx, parsed.Provider); err != nil {
 			return err
@@ -87,16 +90,7 @@ func (a *Archive) ImportParsed(ctx context.Context, sourcePath string, parsed Pa
 				return err
 			}
 		}
-		if _, err := tx.ExecContext(ctx, `insert into sync_state (
-			source_kind, last_import_id, last_import_at, conversation_count, message_count, updated_at
-		) values (?, ?, ?, ?, ?, ?)
-		on conflict(source_kind) do update set
-			last_import_id = excluded.last_import_id,
-			last_import_at = excluded.last_import_at,
-			conversation_count = excluded.conversation_count,
-			message_count = excluded.message_count,
-			updated_at = excluded.updated_at`,
-			parsed.SourceKind, importID, now, stats.Conversations, stats.Messages, now); err != nil {
+		if err := upsertSyncState(ctx, tx, parsed.SourceKind, importID, now, stats.Conversations, stats.Messages, sourceHashCursor(sourceHash)); err != nil {
 			return err
 		}
 		return nil
@@ -137,7 +131,10 @@ func (a *Archive) ImportStream(ctx context.Context, sourcePath, provider, source
 		}
 		if ok {
 			stats = existing
-			return markImportSeen(ctx, tx, importID, startedAt)
+			if err := markImportSeen(ctx, tx, importID, startedAt); err != nil {
+				return err
+			}
+			return upsertSyncState(ctx, tx, sourceKind, importID, startedAt, stats.Conversations, stats.Messages, sourceHashCursor(sourceHash))
 		}
 		if err := upsertProvider(ctx, tx, provider); err != nil {
 			return err
@@ -187,16 +184,7 @@ func (a *Archive) ImportStream(ctx context.Context, sourcePath, provider, source
 			completedAt, stats.Conversations, stats.Messages, stats.Attachments, len(stats.Warnings), completedAt, importID); err != nil {
 			return fmt.Errorf("record import completion: %w", err)
 		}
-		if _, err := tx.ExecContext(ctx, `insert into sync_state (
-			source_kind, last_import_id, last_import_at, conversation_count, message_count, updated_at
-		) values (?, ?, ?, ?, ?, ?)
-		on conflict(source_kind) do update set
-			last_import_id = excluded.last_import_id,
-			last_import_at = excluded.last_import_at,
-			conversation_count = excluded.conversation_count,
-			message_count = excluded.message_count,
-			updated_at = excluded.updated_at`,
-			sourceKind, importID, completedAt, stats.Conversations, stats.Messages, completedAt); err != nil {
+		if err := upsertSyncState(ctx, tx, sourceKind, importID, completedAt, stats.Conversations, stats.Messages, sourceHashCursor(sourceHash)); err != nil {
 			return err
 		}
 		return nil
@@ -205,6 +193,59 @@ func (a *Archive) ImportStream(ctx context.Context, sourcePath, provider, source
 		return ImportStats{}, err
 	}
 	return stats, nil
+}
+
+func (a *Archive) UpdateSyncCursor(ctx context.Context, sourceKind string, cursor SyncCursor) error {
+	if a == nil || a.store == nil {
+		return fmt.Errorf("archive is not open")
+	}
+	if sourceKind == "" {
+		return fmt.Errorf("source kind is required")
+	}
+	checkedAt := timefmt.FormatUTC(time.Now())
+	_, err := a.DB().ExecContext(ctx, `insert into sync_state (
+		source_kind, last_checked_at, cursor_kind, cursor_value, cursor_at, last_candidate_count, updated_at
+	) values (?, ?, ?, ?, nullif(?, ''), ?, ?)
+	on conflict(source_kind) do update set
+		last_checked_at = excluded.last_checked_at,
+		cursor_kind = excluded.cursor_kind,
+		cursor_value = excluded.cursor_value,
+		cursor_at = excluded.cursor_at,
+		last_candidate_count = excluded.last_candidate_count,
+		updated_at = excluded.updated_at`,
+		sourceKind, checkedAt, cursor.Kind, cursor.Value, cursor.At, cursor.CandidateCount, checkedAt)
+	if err != nil {
+		return fmt.Errorf("update sync cursor: %w", err)
+	}
+	return nil
+}
+
+func upsertSyncState(ctx context.Context, tx *sql.Tx, sourceKind, importID, seenAt string, conversations, messages int, cursor SyncCursor) error {
+	_, err := tx.ExecContext(ctx, `insert into sync_state (
+		source_kind, last_import_id, last_import_at, last_checked_at, conversation_count, message_count,
+		cursor_kind, cursor_value, cursor_at, last_candidate_count, updated_at
+	) values (?, ?, ?, ?, ?, ?, ?, ?, nullif(?, ''), ?, ?)
+	on conflict(source_kind) do update set
+		last_import_id = excluded.last_import_id,
+		last_import_at = excluded.last_import_at,
+		last_checked_at = excluded.last_checked_at,
+		conversation_count = excluded.conversation_count,
+		message_count = excluded.message_count,
+		cursor_kind = excluded.cursor_kind,
+		cursor_value = excluded.cursor_value,
+		cursor_at = excluded.cursor_at,
+		last_candidate_count = excluded.last_candidate_count,
+		updated_at = excluded.updated_at`,
+		sourceKind, importID, seenAt, seenAt, conversations, messages,
+		cursor.Kind, cursor.Value, cursor.At, cursor.CandidateCount, seenAt)
+	if err != nil {
+		return fmt.Errorf("upsert sync state: %w", err)
+	}
+	return nil
+}
+
+func sourceHashCursor(sourceHash string) SyncCursor {
+	return SyncCursor{Kind: "source_hash", Value: sourceHash}
 }
 
 func completedImportStats(ctx context.Context, tx *sql.Tx, importID string) (ImportStats, bool, error) {

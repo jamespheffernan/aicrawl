@@ -47,6 +47,53 @@ func (a *Archive) LastImportAt(ctx context.Context) (string, error) {
 }
 
 func (a *Archive) SyncState(ctx context.Context, sourceKind string) (SyncState, bool, error) {
+	version, err := a.SchemaVersion(ctx)
+	if err != nil {
+		return SyncState{}, false, err
+	}
+	if version < 2 {
+		return a.legacySyncState(ctx, sourceKind)
+	}
+	var state SyncState
+	var lastImportID sql.NullString
+	var lastImportAt sql.NullString
+	var lastCheckedAt sql.NullString
+	var cursorKind sql.NullString
+	var cursorValue sql.NullString
+	var cursorAt sql.NullString
+	err = a.DB().QueryRowContext(ctx, `select source_kind, last_import_id, last_import_at,
+		last_checked_at, cursor_kind, cursor_value, cursor_at, last_candidate_count,
+		conversation_count, message_count, updated_at
+		from sync_state
+		where source_kind = ?`, sourceKind).Scan(
+		&state.SourceKind,
+		&lastImportID,
+		&lastImportAt,
+		&lastCheckedAt,
+		&cursorKind,
+		&cursorValue,
+		&cursorAt,
+		&state.CandidateCount,
+		&state.ConversationCount,
+		&state.MessageCount,
+		&state.UpdatedAt,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return SyncState{}, false, nil
+	}
+	if err != nil {
+		return SyncState{}, false, err
+	}
+	state.LastImportID = lastImportID.String
+	state.LastImportAt = lastImportAt.String
+	state.LastCheckedAt = lastCheckedAt.String
+	state.CursorKind = cursorKind.String
+	state.CursorValue = cursorValue.String
+	state.CursorAt = cursorAt.String
+	return state, true, nil
+}
+
+func (a *Archive) legacySyncState(ctx context.Context, sourceKind string) (SyncState, bool, error) {
 	var state SyncState
 	var lastImportID sql.NullString
 	var lastImportAt sql.NullString
@@ -69,6 +116,7 @@ func (a *Archive) SyncState(ctx context.Context, sourceKind string) (SyncState, 
 	}
 	state.LastImportID = lastImportID.String
 	state.LastImportAt = lastImportAt.String
+	state.LastCheckedAt = lastImportAt.String
 	return state, true, nil
 }
 

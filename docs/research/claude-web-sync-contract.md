@@ -33,7 +33,7 @@ Accepted list shapes:
 - top-level array
 - top-level `data` array
 
-Conversation IDs are read from `uuid`, `id`, or `conversation_id`.
+Conversation IDs are read from `uuid`, `id`, or `conversation_id`. Cursor timestamps are read from `updated_at` or `created_at` when present.
 
 Detail endpoint:
 
@@ -47,7 +47,7 @@ Accepted detail shapes:
 - wrapper object with `conversation.chat_messages`
 - wrapper object with `data.chat_messages`
 
-The fetched detail batch is imported through the existing Claude web parser, which expects Claude conversation objects and preserves raw payloads.
+The fetched detail batch is imported through the existing Claude web parser, which expects Claude conversation objects and preserves raw payloads. When list or detail payloads expose timestamps, live sync records a `provider_updated_at` cursor and later skips list candidates at or before that cursor. If nothing new is found, sync updates `last_checked_at` without fetching detail payloads or writing archive rows.
 
 ## Drift Behavior
 

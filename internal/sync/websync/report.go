@@ -10,6 +10,11 @@ type Freshness struct {
 	SourceKind        string `json:"source_kind"`
 	LastImportID      string `json:"last_import_id,omitempty"`
 	LastImportAt      string `json:"last_import_at,omitempty"`
+	LastCheckedAt     string `json:"last_checked_at,omitempty"`
+	CursorKind        string `json:"cursor_kind,omitempty"`
+	CursorValue       string `json:"cursor_value,omitempty"`
+	CursorAt          string `json:"cursor_at,omitempty"`
+	CandidateCount    int64  `json:"candidate_count,omitempty"`
 	ConversationCount int64  `json:"conversation_count,omitempty"`
 	MessageCount      int64  `json:"message_count,omitempty"`
 }

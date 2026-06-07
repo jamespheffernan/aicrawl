@@ -2,6 +2,7 @@ package archive_test
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/openclaw/aicrawl/internal/archive"
 	"github.com/openclaw/aicrawl/internal/schema"
+	_ "modernc.org/sqlite"
 )
 
 func TestMigrationUserVersionAndNewerFailFast(t *testing.T) {
@@ -34,6 +36,118 @@ func TestMigrationUserVersionAndNewerFailFast(t *testing.T) {
 	}
 	if _, err := archive.Open(ctx, dbPath); err == nil || !strings.Contains(err.Error(), "newer") {
 		t.Fatalf("open newer schema error = %v, want newer schema error", err)
+	}
+}
+
+func TestMigrationV1ToV2AddsSyncCursorColumns(t *testing.T) {
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "archive.db")
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `create table sync_state (
+		source_kind text primary key,
+		last_import_id text,
+		last_import_at text,
+		conversation_count integer not null default 0,
+		message_count integer not null default 0,
+		updated_at text not null
+	);
+	insert into sync_state(source_kind, last_import_id, last_import_at, conversation_count, message_count, updated_at)
+	values('chatgpt_web', 'import:old', '2026-06-07T10:00:00.000000000Z', 2, 3, '2026-06-07T10:00:00.000000000Z');
+	pragma user_version = 1;`); err != nil {
+		t.Fatalf("seed v1 db: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close v1 db: %v", err)
+	}
+
+	ar, err := archive.Open(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("open migrated archive: %v", err)
+	}
+	defer ar.Close()
+	version, err := ar.SchemaVersion(ctx)
+	if err != nil {
+		t.Fatalf("schema version: %v", err)
+	}
+	if version != schema.Version {
+		t.Fatalf("schema version = %d, want %d", version, schema.Version)
+	}
+	state, ok, err := ar.SyncState(ctx, "chatgpt_web")
+	if err != nil {
+		t.Fatalf("sync state: %v", err)
+	}
+	if !ok || state.LastCheckedAt != state.LastImportAt || state.ConversationCount != 2 || state.MessageCount != 3 {
+		t.Fatalf("migrated sync state = %+v", state)
+	}
+}
+
+func TestSyncStateRecordsSourceHashAndProviderCursor(t *testing.T) {
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "archive.db")
+	ar, err := archive.Open(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("open archive: %v", err)
+	}
+	defer ar.Close()
+	sourcePath := filepath.Join(t.TempDir(), "source.fixture.json")
+	if err := writeTestSource(sourcePath); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+	parsed := archive.ParsedSource{
+		Provider:   "chatgpt",
+		SourceKind: "chatgpt_web",
+		Conversations: []archive.Conversation{
+			{
+				ID:         "chatgpt:cursor",
+				Provider:   "chatgpt",
+				RawID:      "cursor",
+				Title:      "Cursor",
+				RawPayload: []byte(`{"id":"cursor"}`),
+				Messages: []archive.Message{
+					{
+						ID:             "chatgpt:cursor:msg",
+						Provider:       "chatgpt",
+						ConversationID: "chatgpt:cursor",
+						RawID:          "msg",
+						Role:           "assistant",
+						Ordinal:        0,
+						IsCurrentPath:  true,
+						IsPathKnown:    true,
+						Text:           "cursor sync state fixture",
+						RawPayload:     []byte(`{"id":"msg"}`),
+					},
+				},
+			},
+		},
+	}
+	if _, err := ar.ImportParsed(ctx, sourcePath, parsed); err != nil {
+		t.Fatalf("import parsed: %v", err)
+	}
+	state, ok, err := ar.SyncState(ctx, "chatgpt_web")
+	if err != nil {
+		t.Fatalf("sync state: %v", err)
+	}
+	if !ok || state.CursorKind != "source_hash" || state.CursorValue == "" || state.LastCheckedAt == "" {
+		t.Fatalf("source-hash sync state = %+v", state)
+	}
+	cursor := archive.SyncCursor{
+		Kind:           "provider_updated_at",
+		Value:          "2026-06-07T11:00:00.000000000Z",
+		At:             "2026-06-07T11:00:00.000000000Z",
+		CandidateCount: 4,
+	}
+	if err := ar.UpdateSyncCursor(ctx, "chatgpt_web", cursor); err != nil {
+		t.Fatalf("update sync cursor: %v", err)
+	}
+	state, ok, err = ar.SyncState(ctx, "chatgpt_web")
+	if err != nil {
+		t.Fatalf("sync state after cursor: %v", err)
+	}
+	if !ok || state.CursorKind != cursor.Kind || state.CursorAt != cursor.At || state.CandidateCount != 4 || state.LastImportID == "" {
+		t.Fatalf("provider cursor sync state = %+v", state)
 	}
 }
 

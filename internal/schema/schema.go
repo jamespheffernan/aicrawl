@@ -6,7 +6,7 @@ import (
 	"fmt"
 )
 
-const Version = 1
+const Version = 2
 
 var migrationV1 = []string{
 	`create table if not exists providers (
@@ -147,6 +147,15 @@ var migrationV1 = []string{
 	)`,
 }
 
+var migrationV2 = []string{
+	`alter table sync_state add column last_checked_at text`,
+	`alter table sync_state add column cursor_kind text not null default ''`,
+	`alter table sync_state add column cursor_value text not null default ''`,
+	`alter table sync_state add column cursor_at text`,
+	`alter table sync_state add column last_candidate_count integer not null default 0`,
+	`update sync_state set last_checked_at = coalesce(last_checked_at, last_import_at, updated_at)`,
+}
+
 func Migrate(ctx context.Context, db *sql.DB) error {
 	current, err := UserVersion(ctx, db)
 	if err != nil {
@@ -158,27 +167,37 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	if current == Version {
 		return nil
 	}
-	if current != 0 {
-		return fmt.Errorf("unsupported migration path from schema version %d to %d", current, Version)
-	}
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("begin migration: %w", err)
-	}
-	for _, stmt := range migrationV1 {
-		if _, err := tx.ExecContext(ctx, stmt); err != nil {
+	for next := current + 1; next <= Version; next++ {
+		tx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			return fmt.Errorf("begin migration v%d: %w", next, err)
+		}
+		for _, stmt := range migrationStatements(next) {
+			if _, err := tx.ExecContext(ctx, stmt); err != nil {
+				_ = tx.Rollback()
+				return fmt.Errorf("apply schema v%d: %w", next, err)
+			}
+		}
+		if _, err := tx.ExecContext(ctx, fmt.Sprintf("pragma user_version = %d", next)); err != nil {
 			_ = tx.Rollback()
-			return fmt.Errorf("apply schema v1: %w", err)
+			return fmt.Errorf("set user_version %d: %w", next, err)
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("commit migration v%d: %w", next, err)
 		}
 	}
-	if _, err := tx.ExecContext(ctx, fmt.Sprintf("pragma user_version = %d", Version)); err != nil {
-		_ = tx.Rollback()
-		return fmt.Errorf("set user_version: %w", err)
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit migration: %w", err)
-	}
 	return nil
+}
+
+func migrationStatements(version int) []string {
+	switch version {
+	case 1:
+		return migrationV1
+	case 2:
+		return migrationV2
+	default:
+		return nil
+	}
 }
 
 func UserVersion(ctx context.Context, db *sql.DB) (int, error) {

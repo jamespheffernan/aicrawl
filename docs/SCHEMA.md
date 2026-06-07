@@ -1,12 +1,13 @@
 # Schema
 
-`aicrawl` uses SQLite schema version 1. Migrations are managed with `PRAGMA user_version`; binaries fail fast when a database has a newer schema version than they support.
+`aicrawl` uses SQLite schema version 2. Migrations are managed with `PRAGMA user_version`; binaries fail fast when a database has a newer schema version than they support.
 
 ## Migration Contract
 
 - `internal/schema.Version` is the supported schema version.
 - New databases start at `user_version = 0`.
-- Migration v1 creates all v0.1 tables and indexes, then sets `PRAGMA user_version = 1`.
+- Migration v1 creates the initial v0.1 tables and indexes.
+- Migration v2 adds durable sync cursor columns to `sync_state` and backfills `last_checked_at` from existing import freshness.
 - Read-write opens run migrations.
 - Read-only opens verify that the database is not newer than the binary.
 - Stored timestamps use fixed-width UTC text with nanosecond precision so SQLite text ordering matches chronological ordering.
@@ -148,6 +149,15 @@ The tokenizer is `unicode61`. User queries are normalized and safely quoted by `
 ### `sync_state`
 
 Local summary table for source-kind status. v0.1 writes it during imports, including `sync web --source` and live `sync web --cdp-url` or profile-launched imports with source kinds such as `chatgpt_web` and `claude_web`, and reads it during `sync web --dry-run` and `status --json` to report freshness.
+
+Important columns:
+
+- `source_kind`: source family such as `chatgpt_web`, `claude_web`, or `codex_jsonl`.
+- `last_import_id` and `last_import_at`: most recent import that wrote or confirmed rows for this source kind.
+- `last_checked_at`: most recent import or sync check, including no-change live web syncs.
+- `conversation_count` and `message_count`: counts from the last import batch for this source kind.
+- `cursor_kind`, `cursor_value`, and `cursor_at`: durable cursor metadata. File and captured-payload imports record `source_hash`; live web syncs record `provider_updated_at` when provider list/detail payloads expose update timestamps.
+- `last_candidate_count`: count of list candidates observed during the last cursor-aware live web check when available.
 
 ## Raw Payload Preservation
 
