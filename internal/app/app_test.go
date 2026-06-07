@@ -132,6 +132,74 @@ func TestDoctorJSONReportsDatabaseSchemaAndLastImport(t *testing.T) {
 	}
 }
 
+func TestImportDryRunReportsCountsWithoutCreatingArchive(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
+
+	fixturePath := filepath.Join("..", "..", "testdata", "redacted", "chatgpt-export.fixture.json")
+	var stdout bytes.Buffer
+	cli := New()
+	cli.stdout = &stdout
+	if err := cli.Run(context.Background(), []string{"import", fixturePath, "--dry-run", "--json"}); err != nil {
+		t.Fatalf("import dry-run: %v", err)
+	}
+	var report importDryRunReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode dry-run report: %v", err)
+	}
+	if !report.DryRun || report.Provider != "chatgpt" || report.SourceKind != "chatgpt_export" {
+		t.Fatalf("report identity = %+v", report)
+	}
+	if report.Conversations != 1 || report.Messages == 0 {
+		t.Fatalf("dry-run counts = %+v, want one conversation with messages", report)
+	}
+	stdout.Reset()
+
+	if err := cli.Run(context.Background(), []string{"status", "--json"}); err != nil {
+		t.Fatalf("status after dry-run: %v", err)
+	}
+	var status struct {
+		State string `json:"state"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &status); err != nil {
+		t.Fatalf("decode status: %v", err)
+	}
+	if status.State != "uninitialized" {
+		t.Fatalf("status after dry-run = %q, want uninitialized", status.State)
+	}
+}
+
+func TestImportDryRunCursorStoreReportsCounts(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
+
+	storePath := filepath.Join(t.TempDir(), "workspace", "cursor-fixture-session", "store.db")
+	writeCursorStoreFixture(t, storePath)
+
+	var stdout bytes.Buffer
+	cli := New()
+	cli.stdout = &stdout
+	if err := cli.Run(context.Background(), []string{"import", storePath, "--provider", "cursor", "--dry-run", "--json"}); err != nil {
+		t.Fatalf("import cursor dry-run: %v", err)
+	}
+	var report importDryRunReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode dry-run report: %v", err)
+	}
+	if !report.DryRun || report.Provider != "cursor" || report.SourceKind != "cursor_store" {
+		t.Fatalf("report identity = %+v", report)
+	}
+	if report.Conversations != 1 || report.Messages != 2 {
+		t.Fatalf("dry-run counts = %+v, want one cursor conversation with two visible messages", report)
+	}
+}
+
 func TestImportStreamsLargeConversationArray(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

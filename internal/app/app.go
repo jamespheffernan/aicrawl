@@ -98,7 +98,7 @@ Usage:
   aicrawl doctor [--json]
   aicrawl metadata [--json]
   aicrawl status [--json]
-  aicrawl import <zip-json-or-jsonl-db> [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|cursor|auto]
+  aicrawl import <zip-json-or-jsonl-db> [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|cursor|auto] [--dry-run] [--json]
   aicrawl sync web --provider chatgpt|claude [--source <json-or-zip>] [--profile <dir> | --cdp-url <url>] [--capture <network.json>] [--max-conversations 50] [--dry-run] [--json]
   aicrawl conversations [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|cursor|all] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit 50]
   aicrawl messages --conversation <id> [--path current|all] [--around <message-id>] [--context 5 | --before N --after N]
@@ -326,7 +326,7 @@ func (a *App) doctor(ctx context.Context, globals globalOptions, args []string) 
 }
 
 func (a *App) importSource(ctx context.Context, globals globalOptions, args []string) error {
-	parsed, err := parseOptions(args, boolSet("json"), valueSet("provider"))
+	parsed, err := parseOptions(args, boolSet("json", "dry-run"), valueSet("provider"))
 	if err != nil {
 		return withExitCode(2, err)
 	}
@@ -336,6 +336,19 @@ func (a *App) importSource(ctx context.Context, globals globalOptions, args []st
 	provider, err := importProvider(parsed.values["provider"])
 	if err != nil {
 		return withExitCode(2, err)
+	}
+	if parsed.bools["dry-run"] {
+		report, err := inspectImportSource(parsed.positionals[0], provider)
+		if err != nil {
+			return err
+		}
+		if globals.format == "json" || parsed.bools["json"] {
+			return writeJSON(a.stdout, report)
+		}
+		if err := writeTextLine(a.stdout, "dry-run: found %d conversations and %d messages from %s source", report.Conversations, report.Messages, report.Provider); err != nil {
+			return err
+		}
+		return writeTextLine(a.stdout, "%s", report.PrivacyReminder)
 	}
 	rt, err := resolveRuntime(globals.configPath, true)
 	if err != nil {
@@ -359,62 +372,123 @@ func (a *App) importSource(ctx context.Context, globals globalOptions, args []st
 	return writeTextLine(a.stdout, "%s", stats.PrivacyReminder)
 }
 
+type importDryRunReport struct {
+	DryRun          bool     `json:"dry_run"`
+	Provider        string   `json:"provider"`
+	SourceKind      string   `json:"source_kind"`
+	Conversations   int      `json:"conversations"`
+	Messages        int      `json:"messages"`
+	Attachments     int      `json:"attachments"`
+	Warnings        []string `json:"warnings,omitempty"`
+	PrivacyReminder string   `json:"privacy_reminder"`
+}
+
+func inspectImportSource(path, provider string) (importDryRunReport, error) {
+	report := importDryRunReport{DryRun: true, PrivacyReminder: "Source files contain private conversation data. Dry-run does not write the archive."}
+	emit := func(conversation archive.Conversation, warnings []string) error {
+		report.Conversations++
+		report.Messages += len(conversation.Messages)
+		report.Attachments += len(conversation.Attachments)
+		report.Warnings = append(report.Warnings, warnings...)
+		return nil
+	}
+	header, err := streamImportSource(path, provider, emit)
+	if err != nil {
+		return importDryRunReport{}, err
+	}
+	report.Provider = header.Provider
+	report.SourceKind = header.SourceKind
+	return report, nil
+}
+
 func importStream(ctx context.Context, ar *archive.Archive, path, provider string) (archive.ImportStats, error) {
-	switch provider {
-	case "claude":
-		return ar.ImportStream(ctx, path, "claude", "claude_export", func(emit archive.ConversationEmitter) error {
-			_, err := claudeexport.StreamFile(path, emit)
-			return err
-		})
-	case "chatgpt":
-		return ar.ImportStream(ctx, path, "chatgpt", "chatgpt_export", func(emit archive.ConversationEmitter) error {
-			_, err := chatgptexport.StreamFile(path, emit)
-			return err
-		})
-	case "openclaw":
-		return ar.ImportStream(ctx, path, openclawjsonl.Provider, openclawjsonl.SourceKind, func(emit archive.ConversationEmitter) error {
-			_, err := openclawjsonl.StreamFile(path, emit)
-			return err
-		})
-	case "codex":
-		return ar.ImportStream(ctx, path, codexjsonl.Provider, codexjsonl.SourceKind, func(emit archive.ConversationEmitter) error {
-			_, err := codexjsonl.StreamFile(path, emit)
-			return err
-		})
-	case "claude-code":
-		return ar.ImportStream(ctx, path, claudecodejsonl.Provider, claudecodejsonl.SourceKind, func(emit archive.ConversationEmitter) error {
-			_, err := claudecodejsonl.StreamFile(path, emit)
-			return err
-		})
-	case "cursor":
-		return ar.ImportStream(ctx, path, cursorstore.Provider, cursorstore.SourceKind, func(emit archive.ConversationEmitter) error {
-			_, err := cursorstore.StreamFile(path, emit)
-			return err
-		})
-	case "gemini":
-		return ar.ImportStream(ctx, path, geminicli.Provider, geminicli.SourceKind, func(emit archive.ConversationEmitter) error {
-			_, err := geminicli.StreamFile(path, emit)
-			return err
-		})
-	case "auto", "":
-		stats, err := importStream(ctx, ar, path, "claude")
-		if err == nil {
-			return stats, nil
-		}
-		if !errors.Is(err, claudeexport.ErrNotClaude) {
-			return archive.ImportStats{}, err
-		}
-		stats, err = importStream(ctx, ar, path, "chatgpt")
-		if err == nil {
-			return stats, nil
-		}
-		if errors.Is(err, chatgptexport.ErrNotChatGPT) {
-			return archive.ImportStats{}, fmt.Errorf("could not detect provider from official export shape")
+	header, err := importSourceIdentity(provider)
+	if err != nil {
+		if provider == "auto" || provider == "" {
+			return importStreamAuto(ctx, ar, path)
 		}
 		return archive.ImportStats{}, err
-	default:
-		return archive.ImportStats{}, fmt.Errorf("unsupported provider %q", provider)
 	}
+	return ar.ImportStream(ctx, path, header.Provider, header.SourceKind, func(emit archive.ConversationEmitter) error {
+		_, err := streamImportSource(path, provider, emit)
+		return err
+	})
+}
+
+func streamImportSource(path, provider string, emit archive.ConversationEmitter) (archive.ParsedSource, error) {
+	switch provider {
+	case "claude":
+		return claudeexport.StreamFile(path, emit)
+	case "chatgpt":
+		return chatgptexport.StreamFile(path, emit)
+	case "openclaw":
+		return openclawjsonl.StreamFile(path, emit)
+	case "codex":
+		return codexjsonl.StreamFile(path, emit)
+	case "claude-code":
+		return claudecodejsonl.StreamFile(path, emit)
+	case "cursor":
+		return cursorstore.StreamFile(path, emit)
+	case "gemini":
+		return geminicli.StreamFile(path, emit)
+	case "auto", "":
+		header, err := streamImportSource(path, "claude", emit)
+		if err == nil {
+			return header, nil
+		}
+		if !errors.Is(err, claudeexport.ErrNotClaude) {
+			return archive.ParsedSource{}, err
+		}
+		header, err = streamImportSource(path, "chatgpt", emit)
+		if err == nil {
+			return header, nil
+		}
+		if errors.Is(err, chatgptexport.ErrNotChatGPT) {
+			return archive.ParsedSource{}, fmt.Errorf("could not detect provider from official export shape")
+		}
+		return archive.ParsedSource{}, err
+	default:
+		return archive.ParsedSource{}, fmt.Errorf("unsupported provider %q", provider)
+	}
+}
+
+func importSourceIdentity(provider string) (archive.ParsedSource, error) {
+	switch provider {
+	case "claude":
+		return archive.ParsedSource{Provider: "claude", SourceKind: "claude_export"}, nil
+	case "chatgpt":
+		return archive.ParsedSource{Provider: "chatgpt", SourceKind: "chatgpt_export"}, nil
+	case "openclaw":
+		return archive.ParsedSource{Provider: openclawjsonl.Provider, SourceKind: openclawjsonl.SourceKind}, nil
+	case "codex":
+		return archive.ParsedSource{Provider: codexjsonl.Provider, SourceKind: codexjsonl.SourceKind}, nil
+	case "claude-code":
+		return archive.ParsedSource{Provider: claudecodejsonl.Provider, SourceKind: claudecodejsonl.SourceKind}, nil
+	case "cursor":
+		return archive.ParsedSource{Provider: cursorstore.Provider, SourceKind: cursorstore.SourceKind}, nil
+	case "gemini":
+		return archive.ParsedSource{Provider: geminicli.Provider, SourceKind: geminicli.SourceKind}, nil
+	default:
+		return archive.ParsedSource{}, fmt.Errorf("unsupported provider %q", provider)
+	}
+}
+
+func importStreamAuto(ctx context.Context, ar *archive.Archive, path string) (archive.ImportStats, error) {
+	stats, err := importStream(ctx, ar, path, "claude")
+	if err == nil {
+		return stats, nil
+	}
+	if !errors.Is(err, claudeexport.ErrNotClaude) {
+		return archive.ImportStats{}, err
+	}
+	stats, err = importStream(ctx, ar, path, "chatgpt")
+	if err == nil {
+		return stats, nil
+	}
+	if errors.Is(err, chatgptexport.ErrNotChatGPT) {
+		return archive.ImportStats{}, fmt.Errorf("could not detect provider from official export shape")
+	}
+	return archive.ImportStats{}, err
 }
 
 func (a *App) sync(ctx context.Context, globals globalOptions, args []string) error {

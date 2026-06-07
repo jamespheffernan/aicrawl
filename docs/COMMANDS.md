@@ -80,6 +80,7 @@ aicrawl doctor --json
 Imports one local source ZIP, JSON, JSONL, or Cursor `store.db` file.
 
 ```bash
+aicrawl import ./chatgpt-export.zip --dry-run --json
 aicrawl import ./claude-export.zip --provider claude
 aicrawl import ./chatgpt-export.zip --provider chatgpt
 aicrawl import ./openclaw-session.jsonl --provider openclaw
@@ -91,6 +92,8 @@ aicrawl import ./export.zip --provider auto
 ```
 
 Provider defaults to official Claude/ChatGPT export auto-detection when omitted or set to `auto`. Local agent transcript providers must be selected explicitly. Claude Code imports keep visible user/assistant text and skip control events, thinking blocks, tool calls, and tool results. Cursor imports open `store.db` read-only, use meta identity/title when available, order visible message blobs by SQLite `rowid`, and skip non-JSON blobs, tool calls, and tool results. Imports are idempotent by source kind, provider, and source hash. Text output includes a reminder that source files still contain private data.
+
+With `--dry-run`, import parses the source and reports candidate counts without opening, creating, or writing the archive. JSON output includes provider, source kind, conversation count, message count, attachment count, and bounded parser warnings. It does not include message bodies or full source paths.
 
 ## `sync web`
 

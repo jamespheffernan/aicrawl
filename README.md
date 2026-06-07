@@ -16,6 +16,7 @@ GOWORK=off go build ./cmd/aicrawl
 
 ```bash
 aicrawl init
+aicrawl import ./chatgpt-export.zip --dry-run --json
 aicrawl import ./claude-export.zip --provider claude
 aicrawl import ./chatgpt-export.zip --provider chatgpt
 aicrawl import ./openclaw-session.jsonl --provider openclaw
@@ -51,6 +52,7 @@ v0.1 supports local official export files, captured ChatGPT and Claude web conve
 
 - Claude official export ZIPs or extracted JSON containing conversation data.
 - ChatGPT official export ZIPs or extracted JSON containing `conversations.json`, export batch JSON, or top-level conversations with `mapping`.
+- `aicrawl import <path> --dry-run --json` reports candidate provider, source kind, conversation count, message count, attachment count, and warnings without creating or writing the archive.
 - `aicrawl sync web --provider chatgpt|claude --cdp-url <url>` attaches to an already authenticated browser target and fetches bounded recent conversation list/detail payloads from page context under `chatgpt_web` or `claude_web`.
 - `aicrawl sync web --provider chatgpt|claude --source <json-or-zip>` imports captured provider conversation detail payloads under the same source kinds.
 - `aicrawl sync web --provider chatgpt|claude --dry-run` validates the browser-profile boundary, checks optional redacted browser network captures for list/detail conversation endpoints, reports captured payload counts, and reports archive freshness.

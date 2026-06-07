@@ -12,7 +12,7 @@
 
 For web payloads, run `aicrawl sync web --provider chatgpt|claude --cdp-url <url>` against an already authenticated browser target, or pass `--source <json-or-zip>` for captured detail payloads. Dry-run mode reports auth state, contract state, source counts, and freshness without writing.
 
-The importer does not delete source files. Those files still contain private data after import.
+The importer does not delete source files. Those files still contain private data after import. `import --dry-run` parses sources and reports counts without creating or writing the archive.
 
 ## Package Layout
 

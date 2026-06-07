@@ -50,6 +50,7 @@ Run:
 "$BIN" doctor --json
 "$BIN" metadata --json
 "$BIN" status --json
+"$BIN" import ./testdata/redacted/chatgpt-export.fixture.zip --dry-run --json
 "$BIN" import ./testdata/redacted/claude-export.fixture.zip --provider claude --json
 "$BIN" import ./testdata/redacted/chatgpt-export.fixture.zip --provider chatgpt --json
 "$BIN" import ./testdata/redacted/openclaw-session.fixture.jsonl --provider openclaw --json
