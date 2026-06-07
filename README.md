@@ -99,6 +99,7 @@ The CLI creates runtime directories, config files, Markdown exports, and CrawlBa
 - [Schema](docs/SCHEMA.md)
 - [Commands](docs/COMMANDS.md)
 - [Official exports](docs/EXPORTS.md)
+- [Live provider smoke](docs/LIVE_PROVIDER_SMOKE.md)
 - [OpenClaw handoff](docs/OPENCLAW_HANDOFF.md)
 - [Release checklist](docs/RELEASE_CHECKLIST.md)
 

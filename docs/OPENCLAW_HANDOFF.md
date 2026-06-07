@@ -34,7 +34,7 @@ Maintainers should review:
 - SQLite schema and migration behavior in `internal/schema/`.
 - import idempotency and raw payload preservation in `internal/archive/`.
 - Claude and ChatGPT parsing under `internal/ingest/`.
-- OpenClaw, Codex, and Gemini local transcript parsing under `internal/ingest/`.
+- OpenClaw, Codex, Gemini, Claude Code, Cursor, and Hermes local transcript/store parsing under `internal/ingest/`.
 - ZIP safety and source limits in `internal/security/`.
 - browser-profile sync preflight and launch orchestration under `internal/sync/`.
 - FTS query handling in `internal/textnorm/`.
@@ -42,7 +42,7 @@ Maintainers should review:
 
 ## Privacy Posture
 
-v0.1 imports local official exports, captured ChatGPT/Claude web detail payload files, bounded live CDP page-context ChatGPT/Claude payloads, OpenClaw/Codex/Gemini/Claude Code local session files or roots, and Cursor `store.db` chat stores or roots. It can also run read-only web-sync preflight, launch a dedicated provider browser profile for web sync, and write macOS LaunchAgent plists for recurring web sync. It does not make network calls for file import, sync source import, profile-only sync preflight, search, SQL, Markdown export, LaunchAgent generation, or CrawlBar manifest generation. `sync web --dry-run --cdp-url` does make list-only same-origin provider calls from an already open attached browser page to count candidates, but does not open a provider tab, fetch detail payloads, or write the archive. It does not implement session-token scraping, browser automation to click export buttons, unattended provider login, or cloud storage.
+v0.1 imports local official exports, captured ChatGPT/Claude web detail payload files, bounded live CDP page-context ChatGPT/Claude payloads, OpenClaw/Codex/Gemini/Claude Code local session files or roots, Cursor `store.db` chat stores or roots, and Hermes `state.db`/session JSON/JSONL stores or roots. It can also run read-only web-sync preflight, launch a dedicated provider browser profile for web sync, write macOS LaunchAgent plists for recurring web sync, and run the aggregate-only live provider smoke documented in `docs/LIVE_PROVIDER_SMOKE.md`. It does not make network calls for file import, sync source import, profile-only sync preflight, search, SQL, Markdown export, LaunchAgent generation, CrawlBar manifest generation, or the local-provider import paths. `sync web --dry-run --cdp-url` and `scripts/live-provider-smoke.sh --mode dry-run` do make list-only same-origin provider calls from an already open attached browser page to count candidates, but do not open a provider tab, fetch detail payloads, or write the archive. It does not implement session-token scraping, browser automation to click export buttons, unattended provider login, or cloud storage.
 
 Private data is protected by:
 
@@ -59,6 +59,7 @@ Private data is protected by:
 - Confirm the module path is `github.com/openclaw/aicrawl`.
 - Confirm the first public release version is `0.1.0`.
 - Run the validation commands in `docs/RELEASE_CHECKLIST.md`.
+- Run `scripts/live-provider-smoke.sh` only when a logged-in ChatGPT/Claude CDP browser is available and report aggregate counts only.
 - Confirm public docs match implemented behavior.
 - Confirm `docs/IMPLEMENTATION_PLAN.md`, `docs/CODEX_GOAL_PROMPT.md`, and private real-export plans are ignored and not required for build or tests.
 - Confirm no real exports, databases, logs, generated Markdown exports, local config, or private transcripts are tracked.
@@ -70,7 +71,7 @@ Future work should stay out of v0.1 unless separately approved:
 
 - unattended provider login for ChatGPT/Claude sync;
 - richer attachment extraction;
-- schema migrations beyond v1;
+- schema migrations beyond v3;
 - packaged releases;
 - backup/restore;
 - TUI;
