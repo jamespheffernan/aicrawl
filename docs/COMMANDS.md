@@ -11,8 +11,9 @@ Usage:
   aicrawl doctor [--json]
   aicrawl metadata [--json]
   aicrawl status [--json]
-  aicrawl import <zip-json-or-jsonl-db> [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|cursor|auto]
+  aicrawl import <zip-json-or-jsonl-db> [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|cursor|auto] [--dry-run] [--json]
   aicrawl sync web --provider chatgpt|claude [--source <json-or-zip>] [--profile <dir> | --cdp-url <url>] [--capture <network.json>] [--max-conversations 50] [--dry-run] [--json]
+  aicrawl schedule launchd --provider chatgpt|claude --cdp-url <url> [--interval-minutes 15] [--max-conversations 50] [--out <plist>] [--json]
   aicrawl conversations [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|cursor|all] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit 50]
   aicrawl messages --conversation <id> [--path current|all] [--around <message-id>] [--context 5 | --before N --after N]
   aicrawl search <query> [--group messages|conversations] [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|cursor|all] [--scope visible|transcript|attachments|internal|all] [--role user|assistant|system|developer|tool|attachment|unknown|all] [--path current|all] [--sort relevance|recent] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit 25]
@@ -124,6 +125,27 @@ With `--dry-run`, the command does not write the archive. It reports:
 `--capture` accepts a JSON browser network export or similar structured event dump. Only request URLs, methods, and status codes are inspected. Query strings, fragments, headers, cookies, and bearer tokens are not emitted in the report.
 
 Without `--source`, non-dry-run `sync web` requires `--cdp-url`. Profile-only mode is still a preflight surface until browser launch orchestration is added.
+
+## `schedule launchd`
+
+Writes a macOS LaunchAgent plist for recurring bounded web sync. The command does not load or start the agent.
+
+```bash
+aicrawl schedule launchd --provider chatgpt --cdp-url http://127.0.0.1:9222 --interval-minutes 15
+aicrawl schedule launchd --provider claude --cdp-url http://127.0.0.1:9222 --max-conversations 25 --out ~/Library/LaunchAgents/com.openclaw.aicrawl.sync.claude.plist --json
+```
+
+The generated plist runs:
+
+```bash
+aicrawl sync web --provider <provider> --cdp-url <url> --max-conversations <n> --json
+```
+
+It stores the CDP URL and normal command arguments, but no cookies, bearer tokens, session headers, or browser storage. Keep the browser running with remote debugging enabled at the configured endpoint, then load the plist when ready:
+
+```bash
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.openclaw.aicrawl.sync.chatgpt.plist
+```
 
 ## `conversations`
 

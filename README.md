@@ -35,6 +35,7 @@ aicrawl messages --conversation <conversation-id> --around <message-id> --contex
 aicrawl sql "select count(*) from messages"
 aicrawl export markdown --out ./exported-md
 aicrawl export markdown --conversation <conversation-id> --out ./conversation-md
+aicrawl schedule launchd --provider chatgpt --cdp-url http://127.0.0.1:9222 --interval-minutes 15
 aicrawl crawlbar manifest
 ```
 
@@ -56,6 +57,7 @@ v0.1 supports local official export files, captured ChatGPT and Claude web conve
 - `aicrawl sync web --provider chatgpt|claude --cdp-url <url>` attaches to an already authenticated browser target and fetches bounded recent conversation list/detail payloads from page context under `chatgpt_web` or `claude_web`.
 - `aicrawl sync web --provider chatgpt|claude --source <json-or-zip>` imports captured provider conversation detail payloads under the same source kinds.
 - `aicrawl sync web --provider chatgpt|claude --dry-run` validates the browser-profile boundary, checks optional redacted browser network captures for list/detail conversation endpoints, reports captured payload counts, and reports archive freshness.
+- `aicrawl schedule launchd --provider chatgpt|claude --cdp-url <url>` writes a macOS LaunchAgent plist for recurring bounded web sync. It stores only command arguments, not browser credentials.
 - OpenClaw session JSONL with `session` and `message` events.
 - Codex rollout JSONL with `session_meta` and `response_item` message events.
 - Gemini CLI session JSON with `sessionId` and `messages`.
@@ -71,7 +73,7 @@ v0.1 supports local official export files, captured ChatGPT and Claude web conve
 - Browser automation to click export buttons.
 - Enterprise compliance API ingestion.
 - Embeddings or semantic search.
-- TUI, watch daemon, scheduler, cloud sync, mirror, publish, or backups.
+- TUI, watch daemon, cloud sync, mirror, publish, or backups.
 - Importing archived conversations back into Claude or ChatGPT.
 
 ## Privacy

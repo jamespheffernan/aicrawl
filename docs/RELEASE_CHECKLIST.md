@@ -72,6 +72,7 @@ Run:
 "$BIN" search "AND OR NOT NEAR *"
 "$BIN" sql "select count(*) from messages"
 ! "$BIN" sql "update messages set role = 'x'"
+"$BIN" schedule launchd --provider chatgpt --cdp-url http://127.0.0.1:9222 --out "$SMOKE/aicrawl-sync.plist" --json
 "$BIN" export markdown --out "$SMOKE/exported-md"
 "$BIN" crawlbar manifest --out "$SMOKE/aicrawl.crawlbar.json"
 ```

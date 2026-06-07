@@ -8,7 +8,8 @@
 2. Run `aicrawl init` to create a private config and SQLite archive.
 3. Run `aicrawl import <path> --provider claude|chatgpt|openclaw|codex|gemini|claude-code|cursor|auto`.
 4. Use `conversations`, `messages`, `search`, `sql`, or `export markdown` against the local archive.
-5. Optionally run `aicrawl crawlbar manifest` so CrawlBar can discover the local control surface.
+5. Optionally run `aicrawl schedule launchd ...` to create a recurring macOS web-sync LaunchAgent.
+6. Optionally run `aicrawl crawlbar manifest` so CrawlBar can discover the local control surface.
 
 For web payloads, run `aicrawl sync web --provider chatgpt|claude --cdp-url <url>` against an already authenticated browser target, or pass `--source <json-or-zip>` for captured detail payloads. Dry-run mode reports auth state, contract state, source counts, and freshness without writing.
 
@@ -80,6 +81,8 @@ flowchart LR
 
 Live CDP fetches do not copy cookies, bearer tokens, session headers, or browser storage into config. The fetched detail batch is written to a private temporary cache file, imported through the same source-hash/idempotency path as captured payload files, then removed.
 
+`schedule launchd` writes a macOS LaunchAgent plist that periodically invokes bounded `sync web` with the configured CDP URL. It does not load the agent or launch/log into the browser.
+
 The network discovery parser consumes structured JSON captures, walks nested request objects, and emits only sanitized origins and paths. Query strings, fragments, headers, cookies, and authorization values are not included in the report.
 
 ## Data Model
@@ -116,7 +119,7 @@ FTS reserved words and operators such as `AND`, `OR`, `NOT`, `NEAR`, and `*` are
 
 ## Privacy Boundary
 
-`aicrawl` v0.1 imports official local exports, captured web payload files, bounded live CDP page-context web payloads, and local agent transcript files. It does not use session-token scraping, browser automation to click export buttons, cloud sync, embeddings, background watches, or network search/export. Import, captured source import, search, SQL, Markdown export, and CrawlBar manifest generation are local operations; live web sync only talks to the attached browser target and provider same-origin endpoints from that page.
+`aicrawl` v0.1 imports official local exports, captured web payload files, bounded live CDP page-context web payloads, and local agent transcript files. It does not use session-token scraping, browser automation to click export buttons, cloud sync, embeddings, background watches, or network search/export. Import, captured source import, search, SQL, Markdown export, LaunchAgent generation, and CrawlBar manifest generation are local operations; live web sync only talks to the attached browser target and provider same-origin endpoints from that page.
 
 Private data should stay in ignored local paths such as `imports/private/`, platform runtime directories, SQLite files, logs, and generated Markdown export directories. Public fixtures must be synthetic or redacted.
 

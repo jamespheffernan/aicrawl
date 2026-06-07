@@ -645,6 +645,62 @@ func TestImportCursorStoreSourceIsSearchable(t *testing.T) {
 	}
 }
 
+func TestScheduleLaunchdWritesSyncPlist(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
+
+	outPath := filepath.Join(home, "LaunchAgents", "aicrawl-chatgpt.plist")
+	var stdout bytes.Buffer
+	cli := New()
+	cli.stdout = &stdout
+	if err := cli.Run(context.Background(), []string{
+		"schedule", "launchd",
+		"--provider", "chatgpt",
+		"--cdp-url", "http://127.0.0.1:9222",
+		"--interval-minutes", "7",
+		"--max-conversations", "9",
+		"--aicrawl-bin", "/usr/local/bin/aicrawl",
+		"--out", outPath,
+		"--json",
+	}); err != nil {
+		t.Fatalf("schedule launchd: %v", err)
+	}
+	var result launchdResult
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("decode launchd result: %v", err)
+	}
+	if result.Provider != "chatgpt" || result.IntervalSeconds != 420 || result.MaxConversations != 9 {
+		t.Fatalf("result = %+v", result)
+	}
+	data, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("read plist: %v", err)
+	}
+	plist := string(data)
+	for _, want := range []string{
+		"<key>ProgramArguments</key>",
+		"<string>/usr/local/bin/aicrawl</string>",
+		"<string>sync</string>",
+		"<string>web</string>",
+		"<string>--provider</string>",
+		"<string>chatgpt</string>",
+		"<string>--cdp-url</string>",
+		"<string>http://127.0.0.1:9222</string>",
+		"<key>StartInterval</key>",
+		"<integer>420</integer>",
+	} {
+		if !strings.Contains(plist, want) {
+			t.Fatalf("plist missing %q:\n%s", want, plist)
+		}
+	}
+	if strings.Contains(plist, "token") || strings.Contains(plist, "Authorization") || strings.Contains(plist, "<key>Program</key>") {
+		t.Fatalf("plist contains disallowed auth/shell material:\n%s", plist)
+	}
+}
+
 func TestSyncWebLiveCDPImportsSearchableChatGPTPayload(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -863,6 +919,11 @@ func TestInvalidFilterOptionsReturnUsageErrors(t *testing.T) {
 		{
 			name: "sync web provider",
 			args: []string{"sync", "web", "--provider", "gemini", "--dry-run"},
+			want: "--provider",
+		},
+		{
+			name: "schedule launchd provider",
+			args: []string{"schedule", "launchd", "--provider", "gemini", "--cdp-url", "http://127.0.0.1:9222"},
 			want: "--provider",
 		},
 		{
