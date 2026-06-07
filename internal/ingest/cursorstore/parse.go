@@ -29,6 +29,7 @@ type cursorMeta struct {
 	AgentID   string `json:"agentId"`
 	Name      string `json:"name"`
 	CreatedAt string `json:"createdAt"`
+	StoreKind string `json:"storeKind,omitempty"`
 }
 
 func StreamFile(path string, emit archive.ConversationEmitter) (archive.ParsedSource, error) {
@@ -46,18 +47,35 @@ func StreamFile(path string, emit archive.ConversationEmitter) (archive.ParsedSo
 }
 
 func parseStore(path string) (archive.Conversation, []string, error) {
-	if filepath.Base(path) != "store.db" {
-		return archive.Conversation{}, nil, fmt.Errorf("Cursor source must be a store.db SQLite file")
+	name := filepath.Base(path)
+	if name != "store.db" && name != "state.vscdb" {
+		return archive.Conversation{}, nil, fmt.Errorf("Cursor source must be a store.db or state.vscdb SQLite file")
 	}
 	db, err := openReadOnlyStore(path)
 	if err != nil {
 		return archive.Conversation{}, nil, err
 	}
 	defer db.Close()
-	if err := validateSchema(db); err != nil {
+	var meta cursorMeta
+	var rows []blobRow
+	switch name {
+	case "store.db":
+		if err := validateLegacySchema(db); err != nil {
+			return archive.Conversation{}, nil, err
+		}
+		meta, _ = readLegacyMeta(db)
+		meta.StoreKind = "store.db"
+		rows, err = readLegacyBlobRows(db)
+	case "state.vscdb":
+		if err := validateStateSchema(db); err != nil {
+			return archive.Conversation{}, nil, err
+		}
+		meta = stateMeta(path)
+		rows, err = readStateBlobRows(db)
+	}
+	if err != nil {
 		return archive.Conversation{}, nil, err
 	}
-	meta, _ := readMeta(db)
 	rawID := strings.TrimSpace(meta.AgentID)
 	if rawID == "" {
 		rawID = filepath.Base(filepath.Dir(path))
@@ -68,10 +86,6 @@ func parseStore(path string) (archive.Conversation, []string, error) {
 	title := strings.TrimSpace(meta.Name)
 	if title == "" {
 		title = "Cursor chat " + localtext.RedactID(rawID)
-	}
-	rows, err := readBlobRows(db)
-	if err != nil {
-		return archive.Conversation{}, nil, err
 	}
 	warnings := []string{}
 	var messages []archive.Message
@@ -114,7 +128,7 @@ func openReadOnlyStore(path string) (*sql.DB, error) {
 	return db, nil
 }
 
-func validateSchema(db *sql.DB) error {
+func validateLegacySchema(db *sql.DB) error {
 	for _, table := range []string{"blobs", "meta"} {
 		var count int
 		if err := db.QueryRow(`select count(*) from sqlite_master where type = 'table' and name = ?`, table).Scan(&count); err != nil {
@@ -127,7 +141,20 @@ func validateSchema(db *sql.DB) error {
 	return nil
 }
 
-func readMeta(db *sql.DB) (cursorMeta, error) {
+func validateStateSchema(db *sql.DB) error {
+	for _, table := range []string{"ItemTable", "cursorDiskKV"} {
+		var count int
+		if err := db.QueryRow(`select count(*) from sqlite_master where type = 'table' and name = ?`, table).Scan(&count); err != nil {
+			return fmt.Errorf("inspect Cursor state schema: %w", err)
+		}
+		if count != 1 {
+			return fmt.Errorf("Cursor state store is missing %s table", table)
+		}
+	}
+	return nil
+}
+
+func readLegacyMeta(db *sql.DB) (cursorMeta, error) {
 	var value string
 	if err := db.QueryRow(`select value from meta where key = '0'`).Scan(&value); err != nil {
 		return cursorMeta{}, err
@@ -143,7 +170,19 @@ func readMeta(db *sql.DB) (cursorMeta, error) {
 	return meta, nil
 }
 
-func readBlobRows(db *sql.DB) ([]blobRow, error) {
+func stateMeta(path string) cursorMeta {
+	rawID := filepath.Base(filepath.Dir(path))
+	if rawID == "" || rawID == "." || rawID == string(filepath.Separator) {
+		rawID = strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+	}
+	return cursorMeta{
+		AgentID:   rawID,
+		Name:      "Cursor workspace " + localtext.RedactID(rawID),
+		StoreKind: "state.vscdb",
+	}
+}
+
+func readLegacyBlobRows(db *sql.DB) ([]blobRow, error) {
 	rows, err := db.Query(`select rowid, id, data from blobs order by rowid`)
 	if err != nil {
 		return nil, fmt.Errorf("read Cursor blobs: %w", err)
@@ -161,6 +200,47 @@ func readBlobRows(db *sql.DB) ([]blobRow, error) {
 		return nil, err
 	}
 	return out, nil
+}
+
+func readStateBlobRows(db *sql.DB) ([]blobRow, error) {
+	rows, err := db.Query(`select rowid, key, value from cursorDiskKV where key like 'agentKv:blob:%' order by rowid`)
+	if err != nil {
+		return nil, fmt.Errorf("read Cursor state blobs: %w", err)
+	}
+	defer rows.Close()
+	var out []blobRow
+	for rows.Next() {
+		var rowID int64
+		var key string
+		var value []byte
+		if err := rows.Scan(&rowID, &key, &value); err != nil {
+			return nil, fmt.Errorf("scan Cursor state blob: %w", err)
+		}
+		data, ok := decodeStateBlob(value)
+		if !ok {
+			continue
+		}
+		out = append(out, blobRow{RowID: rowID, ID: strings.TrimPrefix(key, "agentKv:blob:"), Data: data})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func decodeStateBlob(value []byte) ([]byte, bool) {
+	trimmed := strings.TrimSpace(string(value))
+	if trimmed == "" {
+		return nil, false
+	}
+	decoded, err := hex.DecodeString(trimmed)
+	if err == nil && json.Valid(decoded) {
+		return decoded, true
+	}
+	if json.Valid([]byte(trimmed)) {
+		return []byte(trimmed), true
+	}
+	return nil, false
 }
 
 func parseBlobMessage(row blobRow, conversationRawID string, ordinal int) (archive.Message, bool) {

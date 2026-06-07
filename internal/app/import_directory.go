@@ -2,7 +2,9 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -118,7 +120,7 @@ func shouldSkipImportSourceError(err error) bool {
 	if err == nil {
 		return false
 	}
-	return strings.Contains(err.Error(), "contains no importable messages")
+	return strings.Contains(strings.ToLower(err.Error()), "contains no importable")
 }
 
 func skippedImportSourceWarning(action string, index, total int, err error) string {
@@ -174,12 +176,33 @@ func matchesImportSourceFile(path, provider string) bool {
 	case "openclaw", "codex", "claude-code":
 		return ext == ".jsonl"
 	case "gemini":
-		return ext == ".json"
+		return ext == ".json" && looksLikeGeminiSessionFile(path)
 	case "cursor":
-		return name == "store.db"
+		return name == "store.db" || name == "state.vscdb"
 	case "hermes":
 		return name == "state.db" || ext == ".jsonl" || (ext == ".json" && strings.HasPrefix(name, "session_"))
 	default:
 		return false
 	}
+}
+
+func looksLikeGeminiSessionFile(path string) bool {
+	file, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer file.Close()
+	var object map[string]json.RawMessage
+	if err := json.NewDecoder(io.LimitReader(file, 16<<20)).Decode(&object); err != nil {
+		return false
+	}
+	if _, ok := object["sessionId"]; !ok {
+		return false
+	}
+	rawMessages, ok := object["messages"]
+	if !ok {
+		return false
+	}
+	var messages []json.RawMessage
+	return json.Unmarshal(rawMessages, &messages) == nil
 }

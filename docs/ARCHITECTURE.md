@@ -4,7 +4,7 @@
 
 ## User Workflow
 
-1. Collect an official export, captured web payload, local session file, Cursor `store.db`, or Hermes `state.db` in a private local directory.
+1. Collect an official export, captured web payload, local session file, Cursor `store.db`/`state.vscdb`, or Hermes `state.db` in a private local directory.
 2. Run `aicrawl init` to create a private config and SQLite archive.
 3. Run `aicrawl import <path> --provider claude|chatgpt|openclaw|codex|gemini|claude-code|cursor|hermes|auto`.
 4. Use `aicrawl sync web --provider chatgpt|claude --cdp-url <url>` for frequent recent web conversation capture.
@@ -31,7 +31,7 @@ internal/ingest/
   codexjsonl/             Codex rollout JSONL parser
   geminicli/              Gemini CLI session JSON parser
   claudecodejsonl/        Claude Code project JSONL parser
-  cursorstore/            Cursor store.db SQLite parser
+  cursorstore/            Cursor store.db/state.vscdb SQLite parser
   hermessession/          Hermes state.db and session JSON/JSONL parser
   localtext/              shared local transcript text/timestamp helpers
 internal/sync/
@@ -52,7 +52,7 @@ Provider-specific parsing stays under `internal/ingest/*`. Reusable local archiv
 
 ```mermaid
 flowchart LR
-  User["Export ZIP/JSON, local session file, or local chat store.db"] --> Source["source reader"]
+  User["Export ZIP/JSON, local session file, or local chat SQLite store"] --> Source["source reader"]
   Source --> Detect["Provider selection or official export auto-detect"]
   Detect --> Parser["internal/ingest provider parser"]
   Parser --> Canonical["Canonical conversations, messages, edges, attachments"]

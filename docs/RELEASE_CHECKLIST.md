@@ -119,7 +119,7 @@ Optional profile-launch smoke, only when Chrome/Chromium/Microsoft Edge is avail
 "$BIN" sync web --provider chatgpt --profile "$SMOKE/chatgpt-profile" --max-conversations 1 --json
 ```
 
-Cursor import coverage is exercised by generated SQLite fixtures in the Go test suite rather than a checked-in binary `store.db` fixture.
+Cursor import coverage is exercised by generated SQLite fixtures in the Go test suite rather than checked-in binary `store.db` or `state.vscdb` fixtures.
 
 Expected result:
 

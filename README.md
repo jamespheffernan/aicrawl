@@ -25,6 +25,7 @@ aicrawl import ~/.codex/sessions --provider codex --dry-run --json
 aicrawl import ./gemini-session.json --provider gemini
 aicrawl import ./claude-code-session.jsonl --provider claude-code
 aicrawl import ./store.db --provider cursor
+aicrawl import "$HOME/Library/Application Support/Cursor" --provider cursor --dry-run --json
 aicrawl import ~/.hermes/state.db --provider hermes
 aicrawl import ~/.hermes --provider hermes --dry-run --json
 aicrawl sync web --provider chatgpt --source ./chatgpt-web-conversation.json
@@ -69,9 +70,9 @@ v0.1 supports local official export files, captured ChatGPT and Claude web conve
 - Codex rollout JSONL with `session_meta` and `response_item` message events.
 - Gemini CLI session JSON with `sessionId` and `messages`.
 - Claude Code project JSONL with visible `user` and `assistant` message text. Control events, thinking blocks, tool calls, and tool results are skipped.
-- Cursor `store.db` SQLite files with visible `user`, `assistant`, and `system` text. Non-JSON blobs, tool calls, and tool results are skipped.
+- Cursor `store.db` and installed Cursor `state.vscdb` SQLite files with visible `user`, `assistant`, and `system` text. Non-message blobs, tool calls, and tool results are skipped.
 - Hermes `state.db` SQLite session stores and exported Hermes session `.json`/`.jsonl` files. `state.db` is opened read-only and imports visible `user`, `assistant`, `system`, `developer`, and `tool` message content while skipping session metadata and empty/internal records.
-- Directory import for local transcript roots: OpenClaw/Codex/Claude Code discover `*.jsonl`, Gemini discovers `*.json`, Cursor discovers `store.db`, and Hermes prefers a root `state.db` before falling back to `state.db`, `*.jsonl`, and `session_*.json` discovery. Directory reports aggregate source counts without emitting full private paths.
+- Directory import for local transcript roots: OpenClaw/Codex/Claude Code discover `*.jsonl`, Gemini discovers session-shaped `*.json`, Cursor discovers `store.db` and `state.vscdb`, and Hermes prefers a root `state.db` before falling back to `state.db`, `*.jsonl`, and `session_*.json` discovery. Directory reports aggregate source counts without emitting full private paths.
 
 `aicrawl` does not call Claude, ChatGPT, Anthropic, or OpenAI network APIs during import, captured source import, profile-only sync preflight, search, SQL, Markdown export, or CrawlBar manifest generation. Live web sync and `sync web --dry-run --cdp-url` use same-origin browser page fetches against the provider web app, with authentication kept inside the attached browser profile.
 

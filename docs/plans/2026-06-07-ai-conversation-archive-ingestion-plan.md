@@ -35,7 +35,7 @@ Official exports are too slow for keeping a private AI-chat database current, an
 - R6. Import Codex rollout JSONL sessions from both current and archived Codex session roots.
 - R7. Import Gemini CLI JSON chat sessions with stable session and message ordering.
 - R8. Import Claude Code local history only after its JSONL shape is characterized with redacted fixtures.
-- R9. Import Cursor chat databases only after the `blobs` and `meta` table payload contract is characterized with redacted fixtures.
+- R9. Import Cursor chat databases only after the `store.db` `blobs`/`meta` and installed `state.vscdb` `cursorDiskKV` payload contracts are characterized with redacted/generated fixtures.
 - R9a. Import Hermes session history from the local `state.db` session store, with exported session JSON/JSONL files as fallback sources.
 
 ### Archive Behavior
@@ -65,7 +65,7 @@ flowchart TB
     exports["Official export ZIP/JSON"]
     jsonl["OpenClaw / Codex JSONL"]
     gemini["Gemini CLI JSON"]
-    localdb["Cursor store.db"]
+    localdb["Cursor store.db / state.vscdb"]
   end
 
   profile --> webapp --> discover --> same_origin --> web_adapter

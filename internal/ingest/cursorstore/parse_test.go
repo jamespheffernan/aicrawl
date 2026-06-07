@@ -54,6 +54,45 @@ func TestStreamFileParsesCursorStore(t *testing.T) {
 	}
 }
 
+func TestStreamFileParsesCursorStateStore(t *testing.T) {
+	fixture := filepath.Join(t.TempDir(), "workspace-hash", "state.vscdb")
+	writeFixtureStateStore(t, fixture, []fixtureBlob{
+		{id: "user-1", data: []byte(`{"role":"user","content":"cursor state fixture user phrase","id":"user-1"}`)},
+		{id: "assistant-1", data: []byte(`{"role":"assistant","content":[{"type":"text","text":"cursor state fixture assistant phrase"},{"type":"tool-call","input":{"command":"ignored"}}],"id":"assistant-1"}`)},
+		{id: "tool-1", data: []byte(`{"role":"tool","content":[{"type":"tool-result","content":"private tool output that should not be indexed"}],"id":"tool-1"}`)},
+		{id: "system-1", data: []byte(`{"role":"system","content":"cursor state fixture system phrase","id":"system-1"}`)},
+	})
+	var conversations []archive.Conversation
+	parsed, err := StreamFile(fixture, func(conversation archive.Conversation, warnings []string) error {
+		conversations = append(conversations, conversation)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("StreamFile: %v", err)
+	}
+	if parsed.Provider != Provider || parsed.SourceKind != SourceKind {
+		t.Fatalf("parsed identity = %s/%s, want %s/%s", parsed.Provider, parsed.SourceKind, Provider, SourceKind)
+	}
+	if len(conversations) != 1 {
+		t.Fatalf("conversation count = %d, want 1", len(conversations))
+	}
+	conversation := conversations[0]
+	if conversation.ID != "cursor:workspace-hash" || conversation.Title != "Cursor workspace workspac..." {
+		t.Fatalf("conversation identity = %s/%s", conversation.ID, conversation.Title)
+	}
+	if len(conversation.Messages) != 3 {
+		t.Fatalf("messages = %+v, want user, assistant, and system visible messages", conversation.Messages)
+	}
+	if conversation.Messages[1].Text != "cursor state fixture assistant phrase" {
+		t.Fatalf("assistant text = %q", conversation.Messages[1].Text)
+	}
+	for _, message := range conversation.Messages {
+		if message.Text == "private tool output that should not be indexed" || message.Text == "ignored" {
+			t.Fatalf("tool payload was indexed: %+v", conversation.Messages)
+		}
+	}
+}
+
 type fixtureBlob struct {
 	id   string
 	data []byte
@@ -79,6 +118,32 @@ func writeFixtureStore(t *testing.T, path string, rows []fixtureBlob) {
 	for _, row := range rows {
 		if _, err := db.Exec(`insert into blobs(id, data) values(?, ?)`, row.id, row.data); err != nil {
 			t.Fatalf("insert fixture blob: %v", err)
+		}
+	}
+}
+
+func writeFixtureStateStore(t *testing.T, path string, rows []fixtureBlob) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatalf("create fixture dir: %v", err)
+	}
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("open fixture db: %v", err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`create table ItemTable (key text, value blob); create table cursorDiskKV (key text, value blob);`); err != nil {
+		t.Fatalf("create fixture schema: %v", err)
+	}
+	if _, err := db.Exec(`insert into ItemTable(key, value) values('composer.composerData', ?)`, []byte(`{"selectedComposerIds":["workspace-hash"]}`)); err != nil {
+		t.Fatalf("insert composer metadata: %v", err)
+	}
+	if _, err := db.Exec(`insert into cursorDiskKV(key, value) values('composer.content.package-json', ?)`, []byte(hex.EncodeToString([]byte(`{"name":"not a message"}`)))); err != nil {
+		t.Fatalf("insert non-message state blob: %v", err)
+	}
+	for _, row := range rows {
+		if _, err := db.Exec(`insert into cursorDiskKV(key, value) values(?, ?)`, "agentKv:blob:"+row.id, []byte(hex.EncodeToString(row.data))); err != nil {
+			t.Fatalf("insert fixture state blob: %v", err)
 		}
 	}
 }

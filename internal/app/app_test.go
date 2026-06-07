@@ -399,6 +399,9 @@ func TestImportDirectoryImportsSearchableLocalSourcesIdempotently(t *testing.T) 
 		filepath.Join("..", "..", "testdata", "redacted", "codex-session.fixture.jsonl"),
 		filepath.Join(sourceDir, "rollout.fixture.jsonl"),
 	)
+	if err := os.WriteFile(filepath.Join(sourceDir, "metadata-only.jsonl"), []byte(`{"type":"turn_context","cwd":"/private/workspace"}`+"\n"), 0o600); err != nil {
+		t.Fatalf("write metadata-only Codex source: %v", err)
+	}
 
 	var stdout bytes.Buffer
 	cli := New()
@@ -410,8 +413,8 @@ func TestImportDirectoryImportsSearchableLocalSourcesIdempotently(t *testing.T) 
 	if err := json.Unmarshal(stdout.Bytes(), &stats); err != nil {
 		t.Fatalf("decode directory import: %v", err)
 	}
-	if stats.Provider != "codex" || stats.SourceKind != "codex_jsonl" || stats.Sources != 1 || stats.ImportedSources != 1 {
-		t.Fatalf("directory stats = %+v, want one imported Codex source", stats)
+	if stats.Provider != "codex" || stats.SourceKind != "codex_jsonl" || stats.Sources != 2 || stats.ImportedSources != 1 || stats.SkippedSources != 1 {
+		t.Fatalf("directory stats = %+v, want one imported and one skipped Codex source", stats)
 	}
 	if stats.Conversations != 1 || stats.Messages == 0 {
 		t.Fatalf("directory counts = %+v, want one conversation with messages", stats)
@@ -436,8 +439,8 @@ func TestImportDirectoryImportsSearchableLocalSourcesIdempotently(t *testing.T) 
 	if err := json.Unmarshal(stdout.Bytes(), &stats); err != nil {
 		t.Fatalf("decode repeat directory import: %v", err)
 	}
-	if stats.ImportedSources != 0 || stats.AlreadyImportedSources != 1 {
-		t.Fatalf("repeat directory stats = %+v, want one already-imported source", stats)
+	if stats.ImportedSources != 0 || stats.AlreadyImportedSources != 1 || stats.SkippedSources != 1 {
+		t.Fatalf("repeat directory stats = %+v, want one already-imported and one skipped source", stats)
 	}
 }
 
@@ -482,6 +485,47 @@ func TestImportHermesDirectoryPrefersStateDBOverSidecarSessions(t *testing.T) {
 	}
 	if len(hits) != 1 {
 		t.Fatalf("hits = %+v, want one Hermes state.db hit", hits)
+	}
+}
+
+func TestImportGeminiDirectoryIgnoresNonSessionJSON(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
+
+	geminiRoot := filepath.Join(t.TempDir(), ".gemini")
+	sessionDir := filepath.Join(geminiRoot, "chats")
+	if err := os.MkdirAll(sessionDir, 0o700); err != nil {
+		t.Fatalf("create Gemini fixture dir: %v", err)
+	}
+	copyFixture(t,
+		filepath.Join("..", "..", "testdata", "redacted", "gemini-session.fixture.json"),
+		filepath.Join(sessionDir, "session.fixture.json"),
+	)
+	if err := os.WriteFile(filepath.Join(geminiRoot, "settings.json"), []byte(`{"mcpServers":{},"ui":{"theme":"dark"}}`), 0o600); err != nil {
+		t.Fatalf("write Gemini settings fixture: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(geminiRoot, "oauth_creds.json"), []byte(`{"refresh_token":"redacted","access_token":"redacted"}`), 0o600); err != nil {
+		t.Fatalf("write Gemini auth fixture: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	cli := New()
+	cli.stdout = &stdout
+	if err := cli.Run(context.Background(), []string{"import", geminiRoot, "--provider", "gemini", "--dry-run", "--json"}); err != nil {
+		t.Fatalf("Gemini directory dry-run: %v", err)
+	}
+	var report importDryRunReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode Gemini directory dry-run: %v", err)
+	}
+	if report.Provider != "gemini" || report.SourceKind != "gemini_cli" || report.Sources != 1 {
+		t.Fatalf("report identity = %+v, want one Gemini session source", report)
+	}
+	if report.Conversations != 1 || report.Messages == 0 || report.SkippedSources != 0 {
+		t.Fatalf("report counts = %+v, want only the session JSON imported", report)
 	}
 }
 
@@ -1114,6 +1158,43 @@ func TestImportCursorStoreSourceIsSearchable(t *testing.T) {
 
 	if err := cli.Run(context.Background(), []string{"search", "cursor store app fixture assistant phrase", "--provider", "cursor", "--json"}); err != nil {
 		t.Fatalf("search cursor fixture: %v", err)
+	}
+	var hits []archive.SearchHit
+	if err := json.Unmarshal(stdout.Bytes(), &hits); err != nil {
+		t.Fatalf("decode search hits: %v", err)
+	}
+	if len(hits) != 1 || hits[0].Provider != "cursor" {
+		t.Fatalf("hits = %+v, want one cursor hit", hits)
+	}
+}
+
+func TestImportCursorStateStoreSourceIsSearchable(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
+
+	storePath := filepath.Join(t.TempDir(), "workspace-hash", "state.vscdb")
+	writeCursorStateStoreFixture(t, storePath)
+
+	var stdout bytes.Buffer
+	cli := New()
+	cli.stdout = &stdout
+	if err := cli.Run(context.Background(), []string{"import", storePath, "--provider", "cursor", "--json"}); err != nil {
+		t.Fatalf("import cursor state fixture: %v", err)
+	}
+	var stats archive.ImportStats
+	if err := json.Unmarshal(stdout.Bytes(), &stats); err != nil {
+		t.Fatalf("decode import stats: %v", err)
+	}
+	if stats.Provider != "cursor" || stats.SourceKind != "cursor_store" || stats.Conversations != 1 || stats.Messages != 2 {
+		t.Fatalf("stats = %+v, want one cursor state conversation with two visible messages", stats)
+	}
+	stdout.Reset()
+
+	if err := cli.Run(context.Background(), []string{"search", "cursor state app fixture assistant phrase", "--provider", "cursor", "--json"}); err != nil {
+		t.Fatalf("search cursor state fixture: %v", err)
 	}
 	var hits []archive.SearchHit
 	if err := json.Unmarshal(stdout.Bytes(), &hits); err != nil {
@@ -1816,6 +1897,40 @@ func writeCursorStoreFixture(t *testing.T, path string) {
 	for _, row := range rows {
 		if _, err := db.Exec(`insert into blobs(id, data) values(?, ?)`, row.id, row.data); err != nil {
 			t.Fatalf("insert cursor fixture blob: %v", err)
+		}
+	}
+}
+
+func writeCursorStateStoreFixture(t *testing.T, path string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatalf("create cursor state fixture dir: %v", err)
+	}
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("open cursor state fixture db: %v", err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`create table ItemTable (key text, value blob); create table cursorDiskKV (key text, value blob);`); err != nil {
+		t.Fatalf("create cursor state fixture schema: %v", err)
+	}
+	if _, err := db.Exec(`insert into ItemTable(key, value) values('composer.composerData', ?)`, []byte(`{"selectedComposerIds":["workspace-hash"]}`)); err != nil {
+		t.Fatalf("insert cursor state metadata: %v", err)
+	}
+	rows := []struct {
+		id   string
+		data []byte
+	}{
+		{"user-1", []byte(`{"role":"user","content":"cursor state app fixture user phrase","id":"user-1"}`)},
+		{"assistant-1", []byte(`{"role":"assistant","content":[{"type":"text","text":"cursor state app fixture assistant phrase"},{"type":"tool-call","input":{"command":"ignored"}}],"id":"assistant-1"}`)},
+		{"tool-1", []byte(`{"role":"tool","content":[{"type":"tool-result","content":"private tool output that should not be indexed"}],"id":"tool-1"}`)},
+	}
+	if _, err := db.Exec(`insert into cursorDiskKV(key, value) values('composer.content.package-json', ?)`, []byte(hex.EncodeToString([]byte(`{"name":"not a message"}`)))); err != nil {
+		t.Fatalf("insert cursor state non-message blob: %v", err)
+	}
+	for _, row := range rows {
+		if _, err := db.Exec(`insert into cursorDiskKV(key, value) values(?, ?)`, "agentKv:blob:"+row.id, []byte(hex.EncodeToString(row.data))); err != nil {
+			t.Fatalf("insert cursor state fixture blob: %v", err)
 		}
 	}
 }
