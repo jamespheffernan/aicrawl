@@ -201,6 +201,114 @@ func TestImportDryRunCursorStoreReportsCounts(t *testing.T) {
 	}
 }
 
+func TestImportDirectoryDryRunReportsLocalSourceCountsWithoutCreatingArchive(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
+
+	sourceDir := filepath.Join(t.TempDir(), "openclaw-root", "archive")
+	if err := os.MkdirAll(sourceDir, 0o700); err != nil {
+		t.Fatalf("create source dir: %v", err)
+	}
+	copyFixture(t,
+		filepath.Join("..", "..", "testdata", "redacted", "openclaw-session.fixture.jsonl"),
+		filepath.Join(sourceDir, "session.fixture.jsonl"),
+	)
+	if err := os.WriteFile(filepath.Join(sourceDir, "ignored.txt"), []byte("ignored"), 0o600); err != nil {
+		t.Fatalf("write ignored file: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	cli := New()
+	cli.stdout = &stdout
+	if err := cli.Run(context.Background(), []string{"import", filepath.Dir(sourceDir), "--provider", "openclaw", "--dry-run", "--json"}); err != nil {
+		t.Fatalf("directory dry-run: %v", err)
+	}
+	var report importDryRunReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode directory dry-run: %v", err)
+	}
+	if report.Provider != "openclaw" || report.SourceKind != "openclaw_jsonl" || report.Sources != 1 {
+		t.Fatalf("report identity = %+v, want one OpenClaw source", report)
+	}
+	if report.Conversations != 1 || report.Messages == 0 {
+		t.Fatalf("report counts = %+v, want one conversation with messages", report)
+	}
+	stdout.Reset()
+
+	if err := cli.Run(context.Background(), []string{"status", "--json"}); err != nil {
+		t.Fatalf("status after directory dry-run: %v", err)
+	}
+	var status struct {
+		State string `json:"state"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &status); err != nil {
+		t.Fatalf("decode status: %v", err)
+	}
+	if status.State != "uninitialized" {
+		t.Fatalf("status after directory dry-run = %q, want uninitialized", status.State)
+	}
+}
+
+func TestImportDirectoryImportsSearchableLocalSourcesIdempotently(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
+
+	sourceDir := filepath.Join(t.TempDir(), "codex-root", "sessions", "2026")
+	if err := os.MkdirAll(sourceDir, 0o700); err != nil {
+		t.Fatalf("create source dir: %v", err)
+	}
+	copyFixture(t,
+		filepath.Join("..", "..", "testdata", "redacted", "codex-session.fixture.jsonl"),
+		filepath.Join(sourceDir, "rollout.fixture.jsonl"),
+	)
+
+	var stdout bytes.Buffer
+	cli := New()
+	cli.stdout = &stdout
+	if err := cli.Run(context.Background(), []string{"import", filepath.Dir(filepath.Dir(sourceDir)), "--provider", "codex", "--json"}); err != nil {
+		t.Fatalf("directory import: %v", err)
+	}
+	var stats importDirectoryStats
+	if err := json.Unmarshal(stdout.Bytes(), &stats); err != nil {
+		t.Fatalf("decode directory import: %v", err)
+	}
+	if stats.Provider != "codex" || stats.SourceKind != "codex_jsonl" || stats.Sources != 1 || stats.ImportedSources != 1 {
+		t.Fatalf("directory stats = %+v, want one imported Codex source", stats)
+	}
+	if stats.Conversations != 1 || stats.Messages == 0 {
+		t.Fatalf("directory counts = %+v, want one conversation with messages", stats)
+	}
+	stdout.Reset()
+
+	if err := cli.Run(context.Background(), []string{"search", "codex jsonl fixture assistant phrase", "--provider", "codex", "--json"}); err != nil {
+		t.Fatalf("search directory import: %v", err)
+	}
+	var hits []archive.SearchHit
+	if err := json.Unmarshal(stdout.Bytes(), &hits); err != nil {
+		t.Fatalf("decode search hits: %v", err)
+	}
+	if len(hits) != 1 {
+		t.Fatalf("hits = %+v, want one Codex hit", hits)
+	}
+	stdout.Reset()
+
+	if err := cli.Run(context.Background(), []string{"import", filepath.Dir(filepath.Dir(sourceDir)), "--provider", "codex", "--json"}); err != nil {
+		t.Fatalf("repeat directory import: %v", err)
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &stats); err != nil {
+		t.Fatalf("decode repeat directory import: %v", err)
+	}
+	if stats.ImportedSources != 0 || stats.AlreadyImportedSources != 1 {
+		t.Fatalf("repeat directory stats = %+v, want one already-imported source", stats)
+	}
+}
+
 func TestReconcileOfficialExportReportsMissingAndArchivedRows(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -1053,6 +1161,20 @@ sleep 2
 	}
 	t.Setenv("FAKE_CDP_PORT", port)
 	return browserPath
+}
+
+func copyFixture(t *testing.T, src, dst string) {
+	t.Helper()
+	data, err := os.ReadFile(src)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
+		t.Fatalf("create fixture dst dir: %v", err)
+	}
+	if err := os.WriteFile(dst, data, 0o600); err != nil {
+		t.Fatalf("write fixture copy: %v", err)
+	}
 }
 
 func writeCursorStoreFixture(t *testing.T, path string) {

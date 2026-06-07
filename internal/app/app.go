@@ -102,7 +102,7 @@ Usage:
   aicrawl doctor [--json]
   aicrawl metadata [--json]
   aicrawl status [--json]
-  aicrawl import <zip-json-or-jsonl-db> [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|cursor|auto] [--dry-run] [--json]
+  aicrawl import <zip-json-jsonl-db-or-dir> [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|cursor|auto] [--dry-run] [--json]
   aicrawl reconcile <official-export-zip-or-json> [--provider claude|chatgpt|auto] [--json]
   aicrawl sync web --provider chatgpt|claude [--source <json-or-zip>] [--profile <dir> | --cdp-url <url>] [--browser <path>] [--remote-debugging-port 0] [--capture <network.json>] [--max-conversations 50] [--dry-run] [--json]
   aicrawl schedule launchd --provider chatgpt|claude [--cdp-url <url> | --profile <dir>] [--browser <path>] [--remote-debugging-port 0] [--interval-minutes 15] [--max-conversations 50] [--out <plist>] [--json]
@@ -379,14 +379,19 @@ func (a *App) importSource(ctx context.Context, globals globalOptions, args []st
 		return withExitCode(2, err)
 	}
 	if len(parsed.positionals) != 1 {
-		return withExitCode(2, fmt.Errorf("import requires exactly one ZIP, JSON, JSONL, or DB path"))
+		return withExitCode(2, fmt.Errorf("import requires exactly one ZIP, JSON, JSONL, DB, or directory path"))
 	}
 	provider, err := importProvider(parsed.values["provider"])
 	if err != nil {
 		return withExitCode(2, err)
 	}
+	sourcePath := expandPath(parsed.positionals[0])
+	isDir, err := importSourceIsDir(sourcePath)
+	if err != nil {
+		return err
+	}
 	if parsed.bools["dry-run"] {
-		report, err := inspectImportSource(parsed.positionals[0], provider)
+		report, err := inspectImportSource(sourcePath, provider)
 		if err != nil {
 			return err
 		}
@@ -398,6 +403,9 @@ func (a *App) importSource(ctx context.Context, globals globalOptions, args []st
 		}
 		return writeTextLine(a.stdout, "%s", report.PrivacyReminder)
 	}
+	if isDir && !supportsDirectoryImport(provider) {
+		return withExitCode(2, fmt.Errorf("directory import requires provider openclaw, codex, gemini, claude-code, or cursor"))
+	}
 	rt, err := resolveRuntime(globals.configPath, true)
 	if err != nil {
 		return err
@@ -407,7 +415,20 @@ func (a *App) importSource(ctx context.Context, globals globalOptions, args []st
 		return err
 	}
 	defer ar.Close()
-	stats, err := importStream(ctx, ar, parsed.positionals[0], provider)
+	if isDir {
+		stats, err := importDirectory(ctx, ar, sourcePath, provider)
+		if err != nil {
+			return err
+		}
+		if globals.format == "json" || parsed.bools["json"] {
+			return writeJSON(a.stdout, stats)
+		}
+		if err := writeTextLine(a.stdout, "imported %d conversations and %d messages from %d %s sources", stats.Conversations, stats.Messages, stats.Sources, stats.Provider); err != nil {
+			return err
+		}
+		return writeTextLine(a.stdout, "%s", stats.PrivacyReminder)
+	}
+	stats, err := importStream(ctx, ar, sourcePath, provider)
 	if err != nil {
 		return err
 	}
@@ -424,6 +445,7 @@ type importDryRunReport struct {
 	DryRun          bool     `json:"dry_run"`
 	Provider        string   `json:"provider"`
 	SourceKind      string   `json:"source_kind"`
+	Sources         int      `json:"sources,omitempty"`
 	Conversations   int      `json:"conversations"`
 	Messages        int      `json:"messages"`
 	Attachments     int      `json:"attachments"`
@@ -432,6 +454,17 @@ type importDryRunReport struct {
 }
 
 func inspectImportSource(path, provider string) (importDryRunReport, error) {
+	isDir, err := importSourceIsDir(path)
+	if err != nil {
+		return importDryRunReport{}, err
+	}
+	if isDir {
+		return inspectImportDirectory(path, provider)
+	}
+	return inspectImportFile(path, provider)
+}
+
+func inspectImportFile(path, provider string) (importDryRunReport, error) {
 	report := importDryRunReport{DryRun: true, PrivacyReminder: "Source files contain private conversation data. Dry-run does not write the archive."}
 	emit := func(conversation archive.Conversation, warnings []string) error {
 		report.Conversations++

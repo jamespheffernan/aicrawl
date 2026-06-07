@@ -11,7 +11,7 @@ Usage:
   aicrawl doctor [--json]
   aicrawl metadata [--json]
   aicrawl status [--json]
-  aicrawl import <zip-json-or-jsonl-db> [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|cursor|auto] [--dry-run] [--json]
+  aicrawl import <zip-json-jsonl-db-or-dir> [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|cursor|auto] [--dry-run] [--json]
   aicrawl reconcile <official-export-zip-or-json> [--provider claude|chatgpt|auto] [--json]
   aicrawl sync web --provider chatgpt|claude [--source <json-or-zip>] [--profile <dir> | --cdp-url <url>] [--browser <path>] [--remote-debugging-port 0] [--capture <network.json>] [--max-conversations 50] [--dry-run] [--json]
   aicrawl schedule launchd --provider chatgpt|claude [--cdp-url <url> | --profile <dir>] [--browser <path>] [--remote-debugging-port 0] [--interval-minutes 15] [--max-conversations 50] [--out <plist>] [--json]
@@ -81,7 +81,7 @@ aicrawl doctor --json
 
 ## `import`
 
-Imports one local source ZIP, JSON, JSONL, or Cursor `store.db` file.
+Imports one local source ZIP, JSON, JSONL, Cursor `store.db` file, or local transcript directory.
 
 ```bash
 aicrawl import ./chatgpt-export.zip --dry-run --json
@@ -92,10 +92,14 @@ aicrawl import ./codex-session.jsonl --provider codex
 aicrawl import ./gemini-session.json --provider gemini
 aicrawl import ./claude-code-session.jsonl --provider claude-code
 aicrawl import ./store.db --provider cursor
+aicrawl import ~/.codex/sessions --provider codex --dry-run --json
+aicrawl import ~/.claude/projects --provider claude-code --json
 aicrawl import ./export.zip --provider auto
 ```
 
 Provider defaults to official Claude/ChatGPT export auto-detection when omitted or set to `auto`. Local agent transcript providers must be selected explicitly. Claude Code imports keep visible user/assistant text and skip control events, thinking blocks, tool calls, and tool results. Cursor imports open `store.db` read-only, use meta identity/title when available, order visible message blobs by SQLite `rowid`, and skip non-JSON blobs, tool calls, and tool results. Imports are idempotent by source kind, provider, and source hash. Text output includes a reminder that source files still contain private data.
+
+When `<path>` is a directory, `--provider` must be one of `openclaw`, `codex`, `gemini`, `claude-code`, or `cursor`. Directory import recursively discovers provider-shaped sources: OpenClaw/Codex/Claude Code `*.jsonl`, Gemini `*.json`, and Cursor `store.db`. JSON output is an aggregate report with source counts, imported/already-imported source counts, conversation/message/attachment totals, and parser warnings. It does not include full source paths or message text.
 
 With `--dry-run`, import parses the source and reports candidate counts without opening, creating, or writing the archive. JSON output includes provider, source kind, conversation count, message count, attachment count, and bounded parser warnings. It does not include message bodies or full source paths.
 

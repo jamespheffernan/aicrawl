@@ -21,6 +21,7 @@ aicrawl import ./claude-export.zip --provider claude
 aicrawl import ./chatgpt-export.zip --provider chatgpt
 aicrawl import ./openclaw-session.jsonl --provider openclaw
 aicrawl import ./codex-session.jsonl --provider codex
+aicrawl import ~/.codex/sessions --provider codex --dry-run --json
 aicrawl import ./gemini-session.json --provider gemini
 aicrawl import ./claude-code-session.jsonl --provider claude-code
 aicrawl import ./store.db --provider cursor
@@ -67,6 +68,7 @@ v0.1 supports local official export files, captured ChatGPT and Claude web conve
 - Gemini CLI session JSON with `sessionId` and `messages`.
 - Claude Code project JSONL with visible `user` and `assistant` message text. Control events, thinking blocks, tool calls, and tool results are skipped.
 - Cursor `store.db` SQLite files with visible `user`, `assistant`, and `system` text. Non-JSON blobs, tool calls, and tool results are skipped.
+- Directory import for local transcript roots: OpenClaw/Codex/Claude Code discover `*.jsonl`, Gemini discovers `*.json`, and Cursor discovers `store.db` recursively. Directory reports aggregate source counts without emitting full private paths.
 
 `aicrawl` does not call Claude, ChatGPT, Anthropic, or OpenAI network APIs during import, sync preflight, search, SQL, Markdown export, or CrawlBar manifest generation.
 

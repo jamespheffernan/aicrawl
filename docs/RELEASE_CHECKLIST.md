@@ -56,6 +56,9 @@ Run:
 "$BIN" reconcile ./testdata/redacted/chatgpt-export.fixture.zip --provider chatgpt --json
 "$BIN" import ./testdata/redacted/openclaw-session.fixture.jsonl --provider openclaw --json
 "$BIN" import ./testdata/redacted/codex-session.fixture.jsonl --provider codex --json
+mkdir -p "$SMOKE/codex-root"
+cp ./testdata/redacted/codex-session.fixture.jsonl "$SMOKE/codex-root/session.jsonl"
+"$BIN" import "$SMOKE/codex-root" --provider codex --dry-run --json
 "$BIN" import ./testdata/redacted/gemini-session.fixture.json --provider gemini --json
 "$BIN" import ./testdata/redacted/claude-code-session.fixture.jsonl --provider claude-code --json
 "$BIN" sync web --provider chatgpt --source ./testdata/redacted/chatgpt-web-conversation.fixture.json --json
@@ -99,6 +102,7 @@ Expected result:
 - JSON commands emit valid JSON.
 - Fixture re-imports report already-imported status.
 - Local transcript and captured web payload fixtures are searchable after import.
+- Directory dry-runs for local transcript providers report aggregate source counts without writing the archive or emitting private source paths.
 - `status --json` reports `web_sync` freshness for ChatGPT and Claude web source kinds.
 - Reserved-term search succeeds.
 - Read-only SQL succeeds.
