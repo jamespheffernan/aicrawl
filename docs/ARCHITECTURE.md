@@ -6,7 +6,7 @@
 
 1. Collect an official export, captured web payload, or local session file in a private local directory.
 2. Run `aicrawl init` to create a private config and SQLite archive.
-3. Run `aicrawl import <path> --provider claude|chatgpt|openclaw|codex|gemini|auto`.
+3. Run `aicrawl import <path> --provider claude|chatgpt|openclaw|codex|gemini|claude-code|auto`.
 4. Use `conversations`, `messages`, `search`, `sql`, or `export markdown` against the local archive.
 5. Optionally run `aicrawl crawlbar manifest` so CrawlBar can discover the local control surface.
 
@@ -27,6 +27,7 @@ internal/ingest/
   openclawjsonl/          OpenClaw session JSONL parser
   codexjsonl/             Codex rollout JSONL parser
   geminicli/              Gemini CLI session JSON parser
+  claudecodejsonl/        Claude Code project JSONL parser
   localtext/              shared local transcript text/timestamp helpers
 internal/sync/
   browser/                browser-profile and CDP preflight for web sync

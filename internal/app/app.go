@@ -13,6 +13,7 @@ import (
 
 	"github.com/openclaw/aicrawl/internal/archive"
 	"github.com/openclaw/aicrawl/internal/ingest/chatgptexport"
+	"github.com/openclaw/aicrawl/internal/ingest/claudecodejsonl"
 	"github.com/openclaw/aicrawl/internal/ingest/claudeexport"
 	"github.com/openclaw/aicrawl/internal/ingest/codexjsonl"
 	"github.com/openclaw/aicrawl/internal/ingest/geminicli"
@@ -95,13 +96,13 @@ Usage:
   aicrawl doctor [--json]
   aicrawl metadata [--json]
   aicrawl status [--json]
-  aicrawl import <zip-json-or-jsonl> [--provider claude|chatgpt|openclaw|codex|gemini|auto]
+  aicrawl import <zip-json-or-jsonl> [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|auto]
   aicrawl sync web --provider chatgpt|claude [--source <json-or-zip>] [--profile <dir> | --cdp-url <url>] [--capture <network.json>] [--dry-run] [--json]
-  aicrawl conversations [--provider claude|chatgpt|openclaw|codex|gemini|all] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit 50]
+  aicrawl conversations [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|all] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit 50]
   aicrawl messages --conversation <id> [--path current|all] [--around <message-id>] [--context 5 | --before N --after N]
-  aicrawl search <query> [--group messages|conversations] [--provider claude|chatgpt|openclaw|codex|gemini|all] [--scope visible|transcript|attachments|internal|all] [--role user|assistant|system|developer|tool|attachment|unknown|all] [--path current|all] [--sort relevance|recent] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit 25]
+  aicrawl search <query> [--group messages|conversations] [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|all] [--scope visible|transcript|attachments|internal|all] [--role user|assistant|system|developer|tool|attachment|unknown|all] [--path current|all] [--sort relevance|recent] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit 25]
   aicrawl sql <readonly-sql> [--json]
-  aicrawl export markdown --out <dir> [--provider claude|chatgpt|openclaw|codex|gemini|all] [--conversation <id>] [--query <query>] [--scope visible|transcript|attachments|internal|all] [--role user|assistant|system|developer|tool|attachment|unknown|all] [--path current|all] [--sort relevance|recent] [--since YYYY-MM-DD] [--until YYYY-MM-DD]
+  aicrawl export markdown --out <dir> [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|all] [--conversation <id>] [--query <query>] [--scope visible|transcript|attachments|internal|all] [--role user|assistant|system|developer|tool|attachment|unknown|all] [--path current|all] [--sort relevance|recent] [--since YYYY-MM-DD] [--until YYYY-MM-DD]
   aicrawl crawlbar manifest [--out ~/.crawlbar/apps/aicrawl.json]
 
 Global options:
@@ -376,6 +377,11 @@ func importStream(ctx context.Context, ar *archive.Archive, path, provider strin
 	case "codex":
 		return ar.ImportStream(ctx, path, codexjsonl.Provider, codexjsonl.SourceKind, func(emit archive.ConversationEmitter) error {
 			_, err := codexjsonl.StreamFile(path, emit)
+			return err
+		})
+	case "claude-code":
+		return ar.ImportStream(ctx, path, claudecodejsonl.Provider, claudecodejsonl.SourceKind, func(emit archive.ConversationEmitter) error {
+			_, err := claudecodejsonl.StreamFile(path, emit)
 			return err
 		})
 	case "gemini":
@@ -1082,10 +1088,10 @@ func providerOrAll(value string) (string, error) {
 		return "all", nil
 	}
 	switch value {
-	case "all", "claude", "chatgpt", "openclaw", "codex", "gemini":
+	case "all", "claude", "chatgpt", "openclaw", "codex", "gemini", "claude-code":
 		return value, nil
 	default:
-		return "", fmt.Errorf("--provider must be claude, chatgpt, openclaw, codex, gemini, or all")
+		return "", fmt.Errorf("--provider must be claude, chatgpt, openclaw, codex, gemini, claude-code, or all")
 	}
 }
 
@@ -1094,10 +1100,10 @@ func importProvider(value string) (string, error) {
 		return "auto", nil
 	}
 	switch value {
-	case "auto", "claude", "chatgpt", "openclaw", "codex", "gemini":
+	case "auto", "claude", "chatgpt", "openclaw", "codex", "gemini", "claude-code":
 		return value, nil
 	default:
-		return "", fmt.Errorf("--provider must be claude, chatgpt, openclaw, codex, gemini, or auto")
+		return "", fmt.Errorf("--provider must be claude, chatgpt, openclaw, codex, gemini, claude-code, or auto")
 	}
 }
 

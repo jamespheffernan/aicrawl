@@ -11,13 +11,13 @@ Usage:
   aicrawl doctor [--json]
   aicrawl metadata [--json]
   aicrawl status [--json]
-  aicrawl import <zip-json-or-jsonl> [--provider claude|chatgpt|openclaw|codex|gemini|auto]
+  aicrawl import <zip-json-or-jsonl> [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|auto]
   aicrawl sync web --provider chatgpt|claude [--source <json-or-zip>] [--profile <dir> | --cdp-url <url>] [--capture <network.json>] [--dry-run] [--json]
-  aicrawl conversations [--provider claude|chatgpt|openclaw|codex|gemini|all] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit 50]
+  aicrawl conversations [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|all] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit 50]
   aicrawl messages --conversation <id> [--path current|all] [--around <message-id>] [--context 5 | --before N --after N]
-  aicrawl search <query> [--group messages|conversations] [--provider claude|chatgpt|openclaw|codex|gemini|all] [--scope visible|transcript|attachments|internal|all] [--role user|assistant|system|developer|tool|attachment|unknown|all] [--path current|all] [--sort relevance|recent] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit 25]
+  aicrawl search <query> [--group messages|conversations] [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|all] [--scope visible|transcript|attachments|internal|all] [--role user|assistant|system|developer|tool|attachment|unknown|all] [--path current|all] [--sort relevance|recent] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit 25]
   aicrawl sql <readonly-sql> [--json]
-  aicrawl export markdown --out <dir> [--provider claude|chatgpt|openclaw|codex|gemini|all] [--conversation <id>] [--query <query>] [--scope visible|transcript|attachments|internal|all] [--role user|assistant|system|developer|tool|attachment|unknown|all] [--path current|all] [--sort relevance|recent] [--since YYYY-MM-DD] [--until YYYY-MM-DD]
+  aicrawl export markdown --out <dir> [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|all] [--conversation <id>] [--query <query>] [--scope visible|transcript|attachments|internal|all] [--role user|assistant|system|developer|tool|attachment|unknown|all] [--path current|all] [--sort relevance|recent] [--since YYYY-MM-DD] [--until YYYY-MM-DD]
   aicrawl crawlbar manifest [--out ~/.crawlbar/apps/aicrawl.json]
 
 Global options:
@@ -85,10 +85,11 @@ aicrawl import ./chatgpt-export.zip --provider chatgpt
 aicrawl import ./openclaw-session.jsonl --provider openclaw
 aicrawl import ./codex-session.jsonl --provider codex
 aicrawl import ./gemini-session.json --provider gemini
+aicrawl import ./claude-code-session.jsonl --provider claude-code
 aicrawl import ./export.zip --provider auto
 ```
 
-Provider defaults to official Claude/ChatGPT export auto-detection when omitted or set to `auto`. Local agent transcript providers must be selected explicitly. Imports are idempotent by source kind, provider, and source hash. Text output includes a reminder that source files still contain private data.
+Provider defaults to official Claude/ChatGPT export auto-detection when omitted or set to `auto`. Local agent transcript providers must be selected explicitly. Claude Code imports keep visible user/assistant text and skip control events, thinking blocks, tool calls, and tool results. Imports are idempotent by source kind, provider, and source hash. Text output includes a reminder that source files still contain private data.
 
 ## `sync web`
 
@@ -123,6 +124,7 @@ Lists conversations in newest-first order.
 aicrawl conversations --limit 25
 aicrawl conversations --provider chatgpt --since 2026-01-01 --until 2026-06-01
 aicrawl conversations --provider codex --json
+aicrawl conversations --provider claude-code --json
 aicrawl conversations --json
 ```
 

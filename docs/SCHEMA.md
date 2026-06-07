@@ -15,7 +15,7 @@
 
 ### `providers`
 
-Provider registry keyed by provider ID. v0.1 uses `claude`, `chatgpt`, `openclaw`, `codex`, and `gemini`.
+Provider registry keyed by provider ID. v0.1 uses `claude`, `chatgpt`, `openclaw`, `codex`, `gemini`, and `claude-code`.
 
 ### `accounts`
 
@@ -36,7 +36,7 @@ Import ledger keyed by `source_kind`, `provider`, and `source_hash`. This is the
 Important columns:
 
 - `id`: stable import ID.
-- `source_kind`: provider source type such as `claude_export`, `chatgpt_web`, `openclaw_jsonl`, `codex_jsonl`, or `gemini_cli`.
+- `source_kind`: provider source type such as `claude_export`, `chatgpt_web`, `openclaw_jsonl`, `codex_jsonl`, `gemini_cli`, or `claude_code_jsonl`.
 - `provider`: provider ID.
 - `source_hash`: hash of the source file.
 - `source_label`: redacted source label for operator visibility.

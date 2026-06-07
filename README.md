@@ -1,6 +1,6 @@
 # aicrawl
 
-`aicrawl` is a local-first archive for personal AI conversation history. The v0.1 CLI imports official Claude and ChatGPT export ZIP/JSON files, captured ChatGPT and Claude web conversation payloads, and local OpenClaw/Codex/Gemini session files into a private SQLite archive, preserves raw JSON payloads, indexes searchable message and extracted attachment/file text with FTS5, and exports conversations as Markdown.
+`aicrawl` is a local-first archive for personal AI conversation history. The v0.1 CLI imports official Claude and ChatGPT export ZIP/JSON files, captured ChatGPT and Claude web conversation payloads, and local OpenClaw/Codex/Gemini/Claude Code session files into a private SQLite archive, preserves raw JSON payloads, indexes searchable message and extracted attachment/file text with FTS5, and exports conversations as Markdown.
 
 The project follows the OpenClaw pattern: provider-specific parsing lives in `aicrawl`, while reusable local archive mechanics use `github.com/openclaw/crawlkit` where it fits.
 
@@ -21,6 +21,7 @@ aicrawl import ./chatgpt-export.zip --provider chatgpt
 aicrawl import ./openclaw-session.jsonl --provider openclaw
 aicrawl import ./codex-session.jsonl --provider codex
 aicrawl import ./gemini-session.json --provider gemini
+aicrawl import ./claude-code-session.jsonl --provider claude-code
 aicrawl sync web --provider chatgpt --source ./chatgpt-web-conversation.json
 aicrawl sync web --provider chatgpt --dry-run --json
 aicrawl conversations --limit 25
@@ -53,6 +54,7 @@ v0.1 supports local official export files, captured ChatGPT and Claude web conve
 - OpenClaw session JSONL with `session` and `message` events.
 - Codex rollout JSONL with `session_meta` and `response_item` message events.
 - Gemini CLI session JSON with `sessionId` and `messages`.
+- Claude Code project JSONL with visible `user` and `assistant` message text. Control events, thinking blocks, tool calls, and tool results are skipped.
 
 `aicrawl` does not call Claude, ChatGPT, Anthropic, or OpenAI network APIs during import, sync preflight, search, SQL, Markdown export, or CrawlBar manifest generation.
 
@@ -61,7 +63,7 @@ v0.1 supports local official export files, captured ChatGPT and Claude web conve
 - Session-token scraping.
 - Browser automation to click export buttons.
 - Live browser fetching through CDP/page-context calls.
-- Claude Code and Cursor local store ingestion.
+- Cursor local store ingestion.
 - Enterprise compliance API ingestion.
 - Embeddings or semantic search.
 - TUI, watch daemon, scheduler, cloud sync, mirror, publish, or backups.

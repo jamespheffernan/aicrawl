@@ -68,7 +68,6 @@ Private data is protected by:
 
 Future work should stay out of v0.1 unless separately approved:
 
-- local Claude Code transcript ingestion;
 - Cursor local store ingestion;
 - live ChatGPT/Claude browser-profile sync after endpoint contracts are proven current;
 - richer attachment extraction;

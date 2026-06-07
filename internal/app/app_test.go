@@ -489,6 +489,12 @@ func TestImportLocalTranscriptSourcesAreSearchable(t *testing.T) {
 			fixture:  "gemini-session.fixture.json",
 			query:    "gemini cli fixture assistant phrase",
 		},
+		{
+			name:     "claude-code",
+			provider: "claude-code",
+			fixture:  "claude-code-session.fixture.jsonl",
+			query:    "claude code jsonl fixture assistant phrase",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

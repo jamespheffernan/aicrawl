@@ -55,6 +55,7 @@ Run:
 "$BIN" import ./testdata/redacted/openclaw-session.fixture.jsonl --provider openclaw --json
 "$BIN" import ./testdata/redacted/codex-session.fixture.jsonl --provider codex --json
 "$BIN" import ./testdata/redacted/gemini-session.fixture.json --provider gemini --json
+"$BIN" import ./testdata/redacted/claude-code-session.fixture.jsonl --provider claude-code --json
 "$BIN" sync web --provider chatgpt --source ./testdata/redacted/chatgpt-web-conversation.fixture.json --json
 "$BIN" sync web --provider claude --source ./testdata/redacted/claude-web-conversation.fixture.json --json
 "$BIN" import ./testdata/redacted/claude-export.fixture.zip --provider claude --json
@@ -65,6 +66,7 @@ Run:
 "$BIN" search "openclaw jsonl fixture assistant phrase" --provider openclaw --json
 "$BIN" search "codex jsonl fixture assistant phrase" --provider codex --json
 "$BIN" search "gemini cli fixture assistant phrase" --provider gemini --json
+"$BIN" search "claude code jsonl fixture assistant phrase" --provider claude-code --json
 "$BIN" search "web sync claude fixture assistant phrase" --provider claude --json
 "$BIN" search "AND OR NOT NEAR *"
 "$BIN" sql "select count(*) from messages"
