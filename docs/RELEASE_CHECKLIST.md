@@ -74,6 +74,7 @@ Run:
 "$BIN" sql "select count(*) from messages"
 ! "$BIN" sql "update messages set role = 'x'"
 "$BIN" schedule launchd --provider chatgpt --cdp-url http://127.0.0.1:9222 --out "$SMOKE/aicrawl-sync.plist" --json
+"$BIN" schedule launchd --provider chatgpt --profile "$SMOKE/chatgpt-profile" --out "$SMOKE/aicrawl-sync-profile.plist" --json
 "$BIN" export markdown --out "$SMOKE/exported-md"
 "$BIN" crawlbar manifest --out "$SMOKE/aicrawl.crawlbar.json"
 ```
@@ -82,6 +83,12 @@ Optional live-browser smoke, only when a logged-in provider browser is already r
 
 ```bash
 "$BIN" sync web --provider chatgpt --cdp-url http://127.0.0.1:9222 --max-conversations 1 --json
+```
+
+Optional profile-launch smoke, only when Chrome/Chromium/Microsoft Edge is available and it is acceptable for the command to open a provider browser window:
+
+```bash
+"$BIN" sync web --provider chatgpt --profile "$SMOKE/chatgpt-profile" --max-conversations 1 --json
 ```
 
 Cursor import coverage is exercised by generated SQLite fixtures in the Go test suite rather than a checked-in binary `store.db` fixture.
@@ -94,6 +101,7 @@ Expected result:
 - Reserved-term search succeeds.
 - Read-only SQL succeeds.
 - Mutating SQL is rejected.
+- CDP and profile LaunchAgent plist generation succeeds without credentials.
 - Markdown export writes private files.
 - CrawlBar manifest generation succeeds.
 

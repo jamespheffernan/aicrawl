@@ -16,6 +16,7 @@ import (
 
 	"github.com/openclaw/aicrawl/internal/archive"
 	"github.com/openclaw/aicrawl/internal/schema"
+	"github.com/openclaw/aicrawl/internal/sync/websync"
 	_ "modernc.org/sqlite"
 	"nhooyr.io/websocket"
 )
@@ -757,6 +758,62 @@ func TestScheduleLaunchdWritesSyncPlist(t *testing.T) {
 	}
 }
 
+func TestScheduleLaunchdWritesProfileLaunchPlist(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
+
+	outPath := filepath.Join(home, "LaunchAgents", "aicrawl-claude.plist")
+	profilePath := filepath.Join(home, "profiles", "claude")
+	var stdout bytes.Buffer
+	cli := New()
+	cli.stdout = &stdout
+	if err := cli.Run(context.Background(), []string{
+		"schedule", "launchd",
+		"--provider", "claude",
+		"--profile", profilePath,
+		"--browser", "/Applications/Chromium.app/Contents/MacOS/Chromium",
+		"--remote-debugging-port", "0",
+		"--out", outPath,
+		"--json",
+	}); err != nil {
+		t.Fatalf("schedule launchd profile: %v", err)
+	}
+	var result launchdResult
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("decode launchd profile result: %v", err)
+	}
+	if result.Provider != "claude" || result.CDPURL != "" || result.ProfilePath != profilePath {
+		t.Fatalf("result = %+v", result)
+	}
+	data, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("read plist: %v", err)
+	}
+	plist := string(data)
+	for _, want := range []string{
+		"<string>sync</string>",
+		"<string>web</string>",
+		"<string>--provider</string>",
+		"<string>claude</string>",
+		"<string>--profile</string>",
+		"<string>" + profilePath + "</string>",
+		"<string>--browser</string>",
+		"<string>/Applications/Chromium.app/Contents/MacOS/Chromium</string>",
+		"<string>--remote-debugging-port</string>",
+		"<string>0</string>",
+	} {
+		if !strings.Contains(plist, want) {
+			t.Fatalf("plist missing %q:\n%s", want, plist)
+		}
+	}
+	if strings.Contains(plist, "--cdp-url") || strings.Contains(plist, "token") || strings.Contains(plist, "Authorization") {
+		t.Fatalf("profile plist contains disallowed material:\n%s", plist)
+	}
+}
+
 func TestSyncWebLiveCDPImportsSearchableChatGPTPayload(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -797,6 +854,55 @@ func TestSyncWebLiveCDPImportsSearchableChatGPTPayload(t *testing.T) {
 	}
 	if len(hits) != 1 {
 		t.Fatalf("hits = %+v, want one live CDP hit", hits)
+	}
+}
+
+func TestSyncWebLaunchesMissingProfileAndReportsLoginRequired(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/json/version" {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write([]byte(`{"Browser":"fake"}`))
+	}))
+	defer server.Close()
+	port := strings.TrimPrefix(server.URL, "http://127.0.0.1:")
+	fakeBrowser := writeFakeBrowser(t, port)
+	profilePath := filepath.Join(home, "profiles", "chatgpt")
+
+	var stdout bytes.Buffer
+	cli := New()
+	cli.stdout = &stdout
+	if err := cli.Run(context.Background(), []string{
+		"sync", "web",
+		"--provider", "chatgpt",
+		"--profile", profilePath,
+		"--browser", fakeBrowser,
+		"--json",
+	}); err != nil {
+		t.Fatalf("sync web first-run launch: %v", err)
+	}
+	var report websync.Report
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode first-run report: %v", err)
+	}
+	if report.AuthState != "login_required" {
+		t.Fatalf("auth state = %q, want login_required", report.AuthState)
+	}
+	if !report.Session.Launched || report.Session.CDPURL != server.URL {
+		t.Fatalf("session launch = %+v, want launched fake CDP endpoint", report.Session)
+	}
+	if report.Session.BrowserPath != fakeBrowser {
+		t.Fatalf("browser path = %q, want %q", report.Session.BrowserPath, fakeBrowser)
+	}
+	if !strings.Contains(strings.Join(report.Warnings, "\n"), "log in") {
+		t.Fatalf("warnings = %+v, want login guidance", report.Warnings)
 	}
 }
 
@@ -881,6 +987,27 @@ func newFakeChatGPTCDPServer(t *testing.T) *httptest.Server {
 	}))
 	wsURL = "ws" + strings.TrimPrefix(server.URL, "http") + "/devtools/page/1"
 	return server
+}
+
+func writeFakeBrowser(t *testing.T, port string) string {
+	t.Helper()
+	browserPath := filepath.Join(t.TempDir(), "fake-browser")
+	script := `#!/bin/sh
+profile=""
+for arg in "$@"; do
+  case "$arg" in
+    --user-data-dir=*) profile="${arg#--user-data-dir=}" ;;
+  esac
+done
+mkdir -p "$profile"
+printf "%s\n/devtools/browser/fake\n" "$FAKE_CDP_PORT" > "$profile/DevToolsActivePort"
+sleep 2
+`
+	if err := os.WriteFile(browserPath, []byte(script), 0o700); err != nil {
+		t.Fatalf("write fake browser: %v", err)
+	}
+	t.Setenv("FAKE_CDP_PORT", port)
+	return browserPath
 }
 
 func writeCursorStoreFixture(t *testing.T, path string) {
@@ -983,9 +1110,9 @@ func TestInvalidFilterOptionsReturnUsageErrors(t *testing.T) {
 			want: "--provider",
 		},
 		{
-			name: "sync web requires source for live write",
-			args: []string{"sync", "web", "--provider", "chatgpt"},
-			want: "--source",
+			name: "sync web remote debugging port",
+			args: []string{"sync", "web", "--provider", "chatgpt", "--remote-debugging-port", "-1", "--dry-run"},
+			want: "--remote-debugging-port",
 		},
 		{
 			name: "conversations limit",

@@ -36,13 +36,13 @@ Maintainers should review:
 - Claude and ChatGPT parsing under `internal/ingest/`.
 - OpenClaw, Codex, and Gemini local transcript parsing under `internal/ingest/`.
 - ZIP safety and source limits in `internal/security/`.
-- browser-profile sync preflight under `internal/sync/`.
+- browser-profile sync preflight and launch orchestration under `internal/sync/`.
 - FTS query handling in `internal/textnorm/`.
 - public docs and fixture hygiene.
 
 ## Privacy Posture
 
-v0.1 imports local official exports, captured ChatGPT/Claude web detail payload files, bounded live CDP page-context ChatGPT/Claude payloads, OpenClaw/Codex/Gemini/Claude Code local session files, and Cursor `store.db` chat stores. It can also run read-only web-sync preflight and write macOS LaunchAgent plists for recurring web sync. It does not make network calls for file import, sync source import, sync preflight, search, SQL, Markdown export, LaunchAgent generation, or CrawlBar manifest generation. It does not implement session-token scraping, browser automation to click export buttons, automatic browser launch/login, or cloud storage.
+v0.1 imports local official exports, captured ChatGPT/Claude web detail payload files, bounded live CDP page-context ChatGPT/Claude payloads, OpenClaw/Codex/Gemini/Claude Code local session files, and Cursor `store.db` chat stores. It can also run read-only web-sync preflight, launch a dedicated provider browser profile for web sync, and write macOS LaunchAgent plists for recurring web sync. It does not make network calls for file import, sync source import, sync preflight, search, SQL, Markdown export, LaunchAgent generation, or CrawlBar manifest generation. It does not implement session-token scraping, browser automation to click export buttons, unattended provider login, or cloud storage.
 
 Private data is protected by:
 
@@ -68,7 +68,7 @@ Private data is protected by:
 
 Future work should stay out of v0.1 unless separately approved:
 
-- automatic browser launch/login for ChatGPT/Claude sync;
+- unattended provider login for ChatGPT/Claude sync;
 - richer attachment extraction;
 - schema migrations beyond v1;
 - packaged releases;

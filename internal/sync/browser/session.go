@@ -16,21 +16,27 @@ type ProviderSpec struct {
 }
 
 type SessionOptions struct {
-	Provider    string
-	ProfilePath string
-	CDPURL      string
+	Provider            string
+	ProfilePath         string
+	CDPURL              string
+	BrowserPath         string
+	RemoteDebuggingPort int
 }
 
 type SessionPlan struct {
-	Provider    string   `json:"provider"`
-	DisplayName string   `json:"display_name"`
-	SourceKind  string   `json:"source_kind"`
-	HomeURL     string   `json:"home_url"`
-	ProfilePath string   `json:"profile_path,omitempty"`
-	CDPURL      string   `json:"cdp_url,omitempty"`
-	AuthState   string   `json:"auth_state"`
-	Actions     []string `json:"actions,omitempty"`
-	Warnings    []string `json:"warnings,omitempty"`
+	Provider            string   `json:"provider"`
+	DisplayName         string   `json:"display_name"`
+	SourceKind          string   `json:"source_kind"`
+	HomeURL             string   `json:"home_url"`
+	ProfilePath         string   `json:"profile_path,omitempty"`
+	CDPURL              string   `json:"cdp_url,omitempty"`
+	BrowserPath         string   `json:"browser_path,omitempty"`
+	Launched            bool     `json:"launched,omitempty"`
+	LaunchPID           int      `json:"launch_pid,omitempty"`
+	RemoteDebuggingPort int      `json:"remote_debugging_port,omitempty"`
+	AuthState           string   `json:"auth_state"`
+	Actions             []string `json:"actions,omitempty"`
+	Warnings            []string `json:"warnings,omitempty"`
 }
 
 func Provider(value string) (ProviderSpec, error) {
@@ -62,12 +68,14 @@ func BuildSessionPlan(opts SessionOptions) (SessionPlan, error) {
 		return SessionPlan{}, err
 	}
 	plan := SessionPlan{
-		Provider:    spec.ID,
-		DisplayName: spec.DisplayName,
-		SourceKind:  spec.SourceKind,
-		HomeURL:     spec.HomeURL,
-		ProfilePath: opts.ProfilePath,
-		CDPURL:      opts.CDPURL,
+		Provider:            spec.ID,
+		DisplayName:         spec.DisplayName,
+		SourceKind:          spec.SourceKind,
+		HomeURL:             spec.HomeURL,
+		ProfilePath:         opts.ProfilePath,
+		CDPURL:              opts.CDPURL,
+		BrowserPath:         opts.BrowserPath,
+		RemoteDebuggingPort: opts.RemoteDebuggingPort,
 		Actions: []string{
 			"Use a dedicated authenticated browser profile for this provider.",
 			"Replay provider data calls only from the authenticated page context.",

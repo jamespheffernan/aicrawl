@@ -1,6 +1,6 @@
 # aicrawl
 
-`aicrawl` is a local-first archive for personal AI conversation history. The v0.1 CLI imports official Claude and ChatGPT export ZIP/JSON files, syncs recent ChatGPT and Claude web conversations through an attached authenticated browser target or captured payload files, and imports local OpenClaw/Codex/Gemini/Claude Code/Cursor session files into a private SQLite archive. It preserves raw JSON payloads, indexes searchable message and extracted attachment/file text with FTS5, and exports conversations as Markdown.
+`aicrawl` is a local-first archive for personal AI conversation history. The v0.1 CLI imports official Claude and ChatGPT export ZIP/JSON files, syncs recent ChatGPT and Claude web conversations through an attached or launched authenticated browser target or captured payload files, and imports local OpenClaw/Codex/Gemini/Claude Code/Cursor session files into a private SQLite archive. It preserves raw JSON payloads, indexes searchable message and extracted attachment/file text with FTS5, and exports conversations as Markdown.
 
 The project follows the OpenClaw pattern: provider-specific parsing lives in `aicrawl`, while reusable local archive mechanics use `github.com/openclaw/crawlkit` where it fits.
 
@@ -26,6 +26,7 @@ aicrawl import ./claude-code-session.jsonl --provider claude-code
 aicrawl import ./store.db --provider cursor
 aicrawl sync web --provider chatgpt --source ./chatgpt-web-conversation.json
 aicrawl sync web --provider chatgpt --cdp-url http://127.0.0.1:9222 --max-conversations 50
+aicrawl sync web --provider chatgpt --profile ~/.cache/aicrawl/browser-profiles/chatgpt --max-conversations 50
 aicrawl sync web --provider chatgpt --dry-run --json
 aicrawl reconcile ./chatgpt-export.zip --provider chatgpt --json
 aicrawl conversations --limit 25
@@ -36,7 +37,7 @@ aicrawl messages --conversation <conversation-id> --around <message-id> --contex
 aicrawl sql "select count(*) from messages"
 aicrawl export markdown --out ./exported-md
 aicrawl export markdown --conversation <conversation-id> --out ./conversation-md
-aicrawl schedule launchd --provider chatgpt --cdp-url http://127.0.0.1:9222 --interval-minutes 15
+aicrawl schedule launchd --provider chatgpt --profile ~/.cache/aicrawl/browser-profiles/chatgpt --interval-minutes 15
 aicrawl crawlbar manifest
 ```
 
@@ -56,10 +57,11 @@ v0.1 supports local official export files, captured ChatGPT and Claude web conve
 - ChatGPT official export ZIPs or extracted JSON containing `conversations.json`, export batch JSON, or top-level conversations with `mapping`.
 - `aicrawl import <path> --dry-run --json` reports candidate provider, source kind, conversation count, message count, attachment count, and warnings without creating or writing the archive.
 - `aicrawl sync web --provider chatgpt|claude --cdp-url <url>` attaches to an already authenticated browser target and fetches bounded recent conversation list/detail payloads from page context under `chatgpt_web` or `claude_web`.
+- `aicrawl sync web --provider chatgpt|claude --profile <dir>` launches or reuses a dedicated browser profile with Chrome DevTools enabled. If the profile is new, it opens the provider page and reports `login_required` so you can log in normally and rerun sync.
 - `aicrawl sync web --provider chatgpt|claude --source <json-or-zip>` imports captured provider conversation detail payloads under the same source kinds.
 - `aicrawl sync web --provider chatgpt|claude --dry-run` validates the browser-profile boundary, checks optional redacted browser network captures for list/detail conversation endpoints, reports captured payload counts, and reports archive freshness.
 - `aicrawl reconcile <official-export> --provider chatgpt|claude|auto --json` compares a periodic official export against the local archive and reports missing conversation/message coverage without writing.
-- `aicrawl schedule launchd --provider chatgpt|claude --cdp-url <url>` writes a macOS LaunchAgent plist for recurring bounded web sync. It stores only command arguments, not browser credentials.
+- `aicrawl schedule launchd --provider chatgpt|claude [--cdp-url <url> | --profile <dir>]` writes a macOS LaunchAgent plist for recurring bounded web sync. It stores only command arguments, not browser credentials.
 - OpenClaw session JSONL with `session` and `message` events.
 - Codex rollout JSONL with `session_meta` and `response_item` message events.
 - Gemini CLI session JSON with `sessionId` and `messages`.
@@ -71,7 +73,7 @@ v0.1 supports local official export files, captured ChatGPT and Claude web conve
 ## Not Supported In v0.1
 
 - Session-token scraping.
-- Automatic browser process launch and login.
+- Unattended provider login.
 - Browser automation to click export buttons.
 - Enterprise compliance API ingestion.
 - Embeddings or semantic search.

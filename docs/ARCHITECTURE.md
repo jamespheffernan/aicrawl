@@ -81,11 +81,11 @@ flowchart LR
   Freshness --> Report
 ```
 
-`aicrawl sync web` is the browser-profile lane. It validates the intended auth boundary and reports whether a ChatGPT or Claude capture still exposes recognizable conversation list/detail calls. With `--cdp-url`, it attaches to an already running browser, finds or opens a provider page, and runs same-origin list/detail `fetch()` calls from page context. With `--source`, it imports captured conversation detail payloads under `chatgpt_web` or `claude_web`.
+`aicrawl sync web` is the browser-profile lane. It validates the intended auth boundary and reports whether a ChatGPT or Claude capture still exposes recognizable conversation list/detail calls. With `--cdp-url`, it attaches to an already running browser, finds or opens a provider page, and runs same-origin list/detail `fetch()` calls from page context. With `--profile`, it launches Chrome/Chromium/Microsoft Edge against a dedicated user-data directory, binds CDP to `127.0.0.1`, opens the provider page, and either reports `login_required` for a new profile or runs the same live fetch path for an existing profile. With `--source`, it imports captured conversation detail payloads under `chatgpt_web` or `claude_web`.
 
 Live CDP fetches do not copy cookies, bearer tokens, session headers, or browser storage into config. The fetched detail batch is written to a private temporary cache file, imported through the same source-hash/idempotency path as captured payload files, then removed.
 
-`schedule launchd` writes a macOS LaunchAgent plist that periodically invokes bounded `sync web` with the configured CDP URL. It does not load the agent or launch/log into the browser.
+`schedule launchd` writes a macOS LaunchAgent plist that periodically invokes bounded `sync web` with either a configured CDP URL or a dedicated profile path. It does not load the agent or automate provider login.
 
 The network discovery parser consumes structured JSON captures, walks nested request objects, and emits only sanitized origins and paths. Query strings, fragments, headers, cookies, and authorization values are not included in the report.
 

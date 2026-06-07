@@ -104,8 +104,8 @@ Usage:
   aicrawl status [--json]
   aicrawl import <zip-json-or-jsonl-db> [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|cursor|auto] [--dry-run] [--json]
   aicrawl reconcile <official-export-zip-or-json> [--provider claude|chatgpt|auto] [--json]
-  aicrawl sync web --provider chatgpt|claude [--source <json-or-zip>] [--profile <dir> | --cdp-url <url>] [--capture <network.json>] [--max-conversations 50] [--dry-run] [--json]
-  aicrawl schedule launchd --provider chatgpt|claude --cdp-url <url> [--interval-minutes 15] [--max-conversations 50] [--out <plist>] [--json]
+  aicrawl sync web --provider chatgpt|claude [--source <json-or-zip>] [--profile <dir> | --cdp-url <url>] [--browser <path>] [--remote-debugging-port 0] [--capture <network.json>] [--max-conversations 50] [--dry-run] [--json]
+  aicrawl schedule launchd --provider chatgpt|claude [--cdp-url <url> | --profile <dir>] [--browser <path>] [--remote-debugging-port 0] [--interval-minutes 15] [--max-conversations 50] [--out <plist>] [--json]
   aicrawl conversations [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|cursor|all] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit 50]
   aicrawl messages --conversation <id> [--path current|all] [--around <message-id>] [--context 5 | --before N --after N]
   aicrawl search <query> [--group messages|conversations] [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|cursor|all] [--scope visible|transcript|attachments|internal|all] [--role user|assistant|system|developer|tool|attachment|unknown|all] [--path current|all] [--sort relevance|recent] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit 25]
@@ -505,7 +505,7 @@ func (a *App) sync(ctx context.Context, globals globalOptions, args []string) er
 }
 
 func (a *App) syncWeb(ctx context.Context, globals globalOptions, args []string) error {
-	parsed, err := parseOptions(args, boolSet("json", "dry-run"), valueSet("provider", "profile", "cdp-url", "capture", "source", "max-conversations"))
+	parsed, err := parseOptions(args, boolSet("json", "dry-run"), valueSet("provider", "profile", "cdp-url", "browser", "remote-debugging-port", "capture", "source", "max-conversations"))
 	if err != nil {
 		return withExitCode(2, err)
 	}
@@ -521,16 +521,21 @@ func (a *App) syncWeb(ctx context.Context, globals globalOptions, args []string)
 		sourcePath = expandPath(sourcePath)
 	}
 	dryRun := parsed.bools["dry-run"]
-	if !dryRun && sourcePath == "" && parsed.values["cdp-url"] == "" {
-		return withExitCode(2, fmt.Errorf("sync web live fetch requires --cdp-url; pass --source with captured provider payloads or use --dry-run"))
-	}
 	maxConversations, err := parsePositiveOption("max-conversations", parsed.values["max-conversations"], 50)
+	if err != nil {
+		return withExitCode(2, err)
+	}
+	remoteDebuggingPort, hasRemoteDebuggingPort, err := parseNonNegativeOption("remote-debugging-port", parsed.values["remote-debugging-port"])
 	if err != nil {
 		return withExitCode(2, err)
 	}
 	rt, err := resolveRuntime(globals.configPath, !dryRun)
 	if err != nil {
 		return err
+	}
+	browserPath := parsed.values["browser"]
+	if browserPath != "" {
+		browserPath = expandPath(browserPath)
 	}
 	profilePath := parsed.values["profile"]
 	if profilePath != "" {
@@ -539,12 +544,17 @@ func (a *App) syncWeb(ctx context.Context, globals globalOptions, args []string)
 		profilePath = filepath.Join(rt.CacheDir, "browser-profiles", provider)
 	}
 	session, err := browser.BuildSessionPlan(browser.SessionOptions{
-		Provider:    provider,
-		ProfilePath: profilePath,
-		CDPURL:      parsed.values["cdp-url"],
+		Provider:            provider,
+		ProfilePath:         profilePath,
+		CDPURL:              parsed.values["cdp-url"],
+		BrowserPath:         browserPath,
+		RemoteDebuggingPort: remoteDebuggingPort,
 	})
 	if err != nil {
 		return withExitCode(2, err)
+	}
+	if parsed.values["cdp-url"] != "" && (browserPath != "" || hasRemoteDebuggingPort) {
+		session.Warnings = append(session.Warnings, "--browser and --remote-debugging-port are ignored when --cdp-url is set")
 	}
 	var discovery *webdiscover.Report
 	if parsed.values["capture"] != "" {
@@ -576,6 +586,45 @@ func (a *App) syncWeb(ctx context.Context, globals globalOptions, args []string)
 		sourceStats = &stats
 	}
 	if !dryRun {
+		if sourcePath == "" && session.CDPURL == "" {
+			firstRunLoginRequired := session.AuthState == "login_required"
+			launch, err := browser.LaunchProfile(ctx, browser.LaunchOptions{
+				Provider:            provider,
+				ProfilePath:         profilePath,
+				BrowserPath:         browserPath,
+				RemoteDebuggingPort: remoteDebuggingPort,
+			})
+			if err != nil {
+				return err
+			}
+			session.CDPURL = launch.Endpoint
+			session.BrowserPath = launch.BrowserPath
+			session.Launched = launch.Launched
+			session.LaunchPID = launch.PID
+			session.RemoteDebuggingPort = launch.RemoteDebuggingPort
+			if firstRunLoginRequired {
+				session.AuthState = "login_required"
+				session.Warnings = append(session.Warnings, "browser launched with a new dedicated profile; log in to "+session.DisplayName+" and rerun sync")
+				report := websync.BuildReport(session, discovery, freshness, sourceStats, false)
+				if globals.format == "json" || parsed.bools["json"] {
+					return writeJSON(a.stdout, report)
+				}
+				if err := writeTextLine(a.stdout, "%s web sync: login required; browser launched at %s", report.Provider, report.CDPURL); err != nil {
+					return err
+				}
+				for _, warning := range report.Warnings {
+					if err := writeTextLine(a.stdout, "warning: %s", warning); err != nil {
+						return err
+					}
+				}
+				return nil
+			}
+			if launch.Reused {
+				session.AuthState = "browser_reused"
+			} else {
+				session.AuthState = "browser_launched"
+			}
+		}
 		ar, err := archive.Open(ctx, rt.DBPath)
 		if err != nil {
 			return err

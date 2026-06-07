@@ -10,13 +10,17 @@ import (
 )
 
 type launchdResult struct {
-	Path             string   `json:"path"`
-	Label            string   `json:"label"`
-	Provider         string   `json:"provider"`
-	IntervalSeconds  int      `json:"interval_seconds"`
-	MaxConversations int      `json:"max_conversations"`
-	ProgramArguments []string `json:"program_arguments"`
-	NextSteps        []string `json:"next_steps"`
+	Path                string   `json:"path"`
+	Label               string   `json:"label"`
+	Provider            string   `json:"provider"`
+	CDPURL              string   `json:"cdp_url,omitempty"`
+	ProfilePath         string   `json:"profile_path,omitempty"`
+	BrowserPath         string   `json:"browser_path,omitempty"`
+	RemoteDebuggingPort int      `json:"remote_debugging_port,omitempty"`
+	IntervalSeconds     int      `json:"interval_seconds"`
+	MaxConversations    int      `json:"max_conversations"`
+	ProgramArguments    []string `json:"program_arguments"`
+	NextSteps           []string `json:"next_steps"`
 }
 
 func (a *App) schedule(ctx context.Context, globals globalOptions, args []string) error {
@@ -27,7 +31,7 @@ func (a *App) schedule(ctx context.Context, globals globalOptions, args []string
 }
 
 func (a *App) scheduleLaunchd(ctx context.Context, globals globalOptions, args []string) error {
-	parsed, err := parseOptions(args, boolSet("json"), valueSet("provider", "cdp-url", "interval-minutes", "max-conversations", "out", "aicrawl-bin", "label"))
+	parsed, err := parseOptions(args, boolSet("json"), valueSet("provider", "cdp-url", "profile", "browser", "remote-debugging-port", "interval-minutes", "max-conversations", "out", "aicrawl-bin", "label"))
 	if err != nil {
 		return withExitCode(2, err)
 	}
@@ -39,9 +43,6 @@ func (a *App) scheduleLaunchd(ctx context.Context, globals globalOptions, args [
 		return withExitCode(2, err)
 	}
 	cdpURL := strings.TrimSpace(parsed.values["cdp-url"])
-	if cdpURL == "" {
-		return withExitCode(2, fmt.Errorf("--cdp-url is required"))
-	}
 	intervalMinutes, err := parsePositiveOption("interval-minutes", parsed.values["interval-minutes"], 15)
 	if err != nil {
 		return withExitCode(2, err)
@@ -49,6 +50,25 @@ func (a *App) scheduleLaunchd(ctx context.Context, globals globalOptions, args [
 	maxConversations, err := parsePositiveOption("max-conversations", parsed.values["max-conversations"], 50)
 	if err != nil {
 		return withExitCode(2, err)
+	}
+	remoteDebuggingPort, hasRemoteDebuggingPort, err := parseNonNegativeOption("remote-debugging-port", parsed.values["remote-debugging-port"])
+	if err != nil {
+		return withExitCode(2, err)
+	}
+	browserPath := strings.TrimSpace(parsed.values["browser"])
+	if browserPath != "" {
+		browserPath = expandPath(browserPath)
+	}
+	profilePath := strings.TrimSpace(parsed.values["profile"])
+	if profilePath != "" {
+		profilePath = expandPath(profilePath)
+	}
+	if cdpURL == "" && profilePath == "" {
+		rt, err := resolveRuntime(globals.configPath, true)
+		if err != nil {
+			return err
+		}
+		profilePath = filepath.Join(rt.CacheDir, "browser-profiles", provider)
 	}
 	binPath := strings.TrimSpace(parsed.values["aicrawl-bin"])
 	if binPath == "" {
@@ -77,21 +97,41 @@ func (a *App) scheduleLaunchd(ctx context.Context, globals globalOptions, args [
 	programArgs = append(programArgs,
 		"sync", "web",
 		"--provider", provider,
-		"--cdp-url", cdpURL,
 		"--max-conversations", fmt.Sprint(maxConversations),
 		"--json",
 	)
+	if cdpURL != "" {
+		programArgs = append(programArgs, "--cdp-url", cdpURL)
+	} else {
+		programArgs = append(programArgs, "--profile", profilePath)
+		if browserPath != "" {
+			programArgs = append(programArgs, "--browser", browserPath)
+		}
+		if hasRemoteDebuggingPort {
+			programArgs = append(programArgs, "--remote-debugging-port", fmt.Sprint(remoteDebuggingPort))
+		}
+	}
+	nextSteps := []string{"Load the LaunchAgent with launchctl when you are ready."}
+	if cdpURL != "" {
+		nextSteps = append([]string{"Keep the browser running with remote debugging enabled at the configured CDP URL."}, nextSteps...)
+	} else {
+		nextSteps = append([]string{
+			"The first run may launch the dedicated browser profile; log in normally if the provider asks.",
+			"Future runs reuse the same profile and keep authentication inside browser storage.",
+		}, nextSteps...)
+	}
 	result := launchdResult{
-		Path:             outPath,
-		Label:            label,
-		Provider:         provider,
-		IntervalSeconds:  intervalMinutes * 60,
-		MaxConversations: maxConversations,
-		ProgramArguments: append([]string(nil), programArgs...),
-		NextSteps: []string{
-			"Keep the browser running with remote debugging enabled at the configured CDP URL.",
-			"Load the LaunchAgent with launchctl when you are ready.",
-		},
+		Path:                outPath,
+		Label:               label,
+		Provider:            provider,
+		CDPURL:              cdpURL,
+		ProfilePath:         profilePath,
+		BrowserPath:         browserPath,
+		RemoteDebuggingPort: remoteDebuggingPort,
+		IntervalSeconds:     intervalMinutes * 60,
+		MaxConversations:    maxConversations,
+		ProgramArguments:    append([]string(nil), programArgs...),
+		NextSteps:           nextSteps,
 	}
 	if err := writeLaunchAgent(outPath, label, programArgs, result.IntervalSeconds); err != nil {
 		return err
