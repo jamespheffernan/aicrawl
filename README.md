@@ -24,6 +24,7 @@ aicrawl import ./codex-session.jsonl --provider codex
 aicrawl import ~/.codex/sessions --provider codex --dry-run --json
 aicrawl import ./gemini-session.json --provider gemini
 aicrawl import ./claude-code-session.jsonl --provider claude-code
+aicrawl import "$HOME/Library/Application Support/Claude" --provider claude-code --dry-run --json
 aicrawl import ./store.db --provider cursor
 aicrawl import "$HOME/Library/Application Support/Cursor" --provider cursor --dry-run --json
 aicrawl import ~/.hermes/state.db --provider hermes
@@ -71,7 +72,7 @@ v0.1 supports local official export files, captured ChatGPT and Claude web conve
 - OpenClaw session JSONL with `session` and `message` events, including Discord/Telegram `sourceChannel` and sender metadata when OpenClaw records it.
 - Codex rollout JSONL with `session_meta` and `response_item` message events.
 - Gemini CLI session JSON with `sessionId` and `messages`.
-- Claude Code project JSONL with visible `user` and `assistant` message text. Control events, thinking blocks, tool calls, and tool results are skipped.
+- Claude Code project JSONL with visible `user` and `assistant` message text. Control events, thinking blocks, tool calls, and tool results are skipped. Directory import can point at `~/.claude/projects` for CLI sessions or `~/Library/Application Support/Claude` for Claude desktop/local-agent sessions that embed Claude Code-style transcript JSONL files.
 - Cursor `store.db` and installed Cursor `state.vscdb` SQLite files with visible `user`, `assistant`, and `system` text. Non-message blobs, tool calls, and tool results are skipped.
 - Hermes `state.db` SQLite session stores and exported Hermes session `.json`/`.jsonl` files. `state.db` is opened read-only and imports visible `user`, `assistant`, `system`, `developer`, and `tool` message content while skipping session metadata and empty/internal records.
 - Directory import for local transcript roots: OpenClaw/Codex/Claude Code discover `*.jsonl`, Gemini discovers session-shaped `*.json`, Cursor discovers `store.db` and `state.vscdb`, and Hermes prefers a root `state.db` before falling back to `state.db`, `*.jsonl`, and `session_*.json` discovery. Directory reports aggregate source counts without emitting full private paths.

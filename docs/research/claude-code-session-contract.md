@@ -2,7 +2,14 @@
 
 Observed date: 2026-06-07
 
-Claude Code stores project sessions as JSONL files under a project-scoped local directory. The importer targets one JSONL session file at a time.
+Claude Code stores project sessions as JSONL files under a project-scoped local directory. The importer targets one JSONL session file at a time, and directory import recursively discovers JSONL transcript files.
+
+Observed local roots:
+
+- `~/.claude/projects` for Claude Code CLI sessions.
+- `~/Library/Application Support/Claude` for Claude desktop/local-agent sessions that embed Claude Code-style transcript trees.
+
+Claude desktop also stores `local_*.json` session metadata. Those files can include useful titles, model names, working directories, and initial prompts, but the current importer intentionally uses the companion JSONL transcript files rather than indexing metadata-only sessions as shallow conversations.
 
 ## Importable Records
 
