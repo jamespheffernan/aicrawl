@@ -83,10 +83,18 @@ cp ./testdata/redacted/codex-session.fixture.jsonl "$SMOKE/codex-root/session.js
 "$BIN" crawlbar manifest --out "$SMOKE/aicrawl.crawlbar.json"
 ```
 
-Optional live-browser smoke, only when a logged-in provider browser is already running with a Chrome DevTools endpoint:
+Optional live-browser dry-run smoke, only when a logged-in provider browser page is already open in a browser with a Chrome DevTools endpoint. These commands count list candidates only; they must not fetch detail payloads or create/open the archive when run in the isolated home above:
+
+```bash
+"$BIN" sync web --provider chatgpt --cdp-url http://127.0.0.1:9222 --max-conversations 1 --dry-run --json
+"$BIN" sync web --provider claude --cdp-url http://127.0.0.1:9222 --max-conversations 1 --dry-run --json
+```
+
+Optional live-browser write smoke, only when a logged-in provider browser page is already open in a browser with a Chrome DevTools endpoint and it is acceptable to import one real recent conversation into the isolated temp-home archive:
 
 ```bash
 "$BIN" sync web --provider chatgpt --cdp-url http://127.0.0.1:9222 --max-conversations 1 --json
+"$BIN" sync web --provider claude --cdp-url http://127.0.0.1:9222 --max-conversations 1 --json
 ```
 
 Optional profile-launch smoke, only when Chrome/Chromium/Microsoft Edge is available and it is acceptable for the command to open a provider browser window:
@@ -105,6 +113,7 @@ Expected result:
 - Local transcript and captured web payload fixtures are searchable after import.
 - Directory dry-runs for local transcript providers report aggregate source counts without writing the archive or emitting private source paths.
 - `status --json` reports `web_sync` freshness for ChatGPT and Claude web source kinds.
+- Optional live-browser dry-runs report `source.kind` as `live_list` with candidate counts, or `live_list_unavailable` with a warning when no provider page target is attached; they do not write the archive.
 - Stale or partial web endpoint captures fail before archive writes with a stable `contract_<state>` error prefix.
 - Live fetch unit tests skip 403/404/410 conversation details while preserving accessible ChatGPT/Claude details in the same batch.
 - Reserved-term search succeeds.
