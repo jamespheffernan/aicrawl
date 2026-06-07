@@ -29,6 +29,52 @@ type LiveOptions struct {
 	PageSize         int
 }
 
+type LiveInspection struct {
+	CandidateConversations int
+	Warnings               []string
+}
+
+func InspectLive(ctx context.Context, fetcher Fetcher, opts LiveOptions) (LiveInspection, error) {
+	if fetcher == nil {
+		return LiveInspection{}, fmt.Errorf("ChatGPT live fetcher is required")
+	}
+	maxConversations := bounded(opts.MaxConversations, defaultMaxConversations, 1, 1000)
+	pageSize := bounded(opts.PageSize, defaultPageSize, 1, 100)
+	seen := map[string]bool{}
+	inspection := LiveInspection{}
+	for offset := 0; inspection.CandidateConversations < maxConversations; offset += pageSize {
+		limit := min(pageSize, maxConversations-inspection.CandidateConversations)
+		listURL := fmt.Sprintf("%s/backend-api/conversations?offset=%d&limit=%d&order=updated", chatGPTOrigin, offset, limit)
+		listResp, err := fetcher.Fetch(ctx, listURL)
+		if err != nil {
+			return LiveInspection{}, fmt.Errorf("fetch ChatGPT conversation list: %w", err)
+		}
+		if !okStatus(listResp.Status) {
+			inspection.Warnings = append(inspection.Warnings, fmt.Sprintf("ChatGPT conversation list returned HTTP status %d; login or endpoint shape may need attention", listResp.Status))
+			return inspection, nil
+		}
+		ids, err := extractConversationIDs(listResp.Body, "items", "conversations")
+		if err != nil {
+			inspection.Warnings = append(inspection.Warnings, "ChatGPT conversation list could not be parsed for candidate IDs: "+err.Error())
+			return inspection, nil
+		}
+		if len(ids) == 0 {
+			break
+		}
+		for _, id := range ids {
+			if id == "" || seen[id] || inspection.CandidateConversations >= maxConversations {
+				continue
+			}
+			seen[id] = true
+			inspection.CandidateConversations++
+		}
+		if len(ids) < limit {
+			break
+		}
+	}
+	return inspection, nil
+}
+
 func FetchLive(ctx context.Context, fetcher Fetcher, opts LiveOptions) ([]byte, error) {
 	if fetcher == nil {
 		return nil, fmt.Errorf("ChatGPT live fetcher is required")

@@ -50,6 +50,25 @@ func TestFetchLiveBuildsClaudeDetailArray(t *testing.T) {
 	}
 }
 
+func TestInspectLiveCountsClaudeListCandidatesWithoutDetails(t *testing.T) {
+	inspection, err := InspectLive(context.Background(), fakeStatusFetcher{
+		"https://claude.ai/api/organizations": {
+			Status: 200,
+			Body:   []byte(`[{"uuid":"org-1"}]`),
+		},
+		"https://claude.ai/api/organizations/org-1/chat_conversations?limit=2&offset=0": {
+			Status: 200,
+			Body:   []byte(`{"chat_conversations":[{"uuid":"claude-live-1"},{"uuid":"claude-live-2"}]}`),
+		},
+	}, LiveOptions{MaxConversations: 2, PageSize: 2})
+	if err != nil {
+		t.Fatalf("InspectLive: %v", err)
+	}
+	if inspection.CandidateConversations != 2 || len(inspection.Warnings) != 0 {
+		t.Fatalf("inspection = %+v, want two clean candidates", inspection)
+	}
+}
+
 func TestFetchLiveSkipsInaccessibleClaudeDetails(t *testing.T) {
 	payload, err := FetchLive(context.Background(), fakeStatusFetcher{
 		"https://claude.ai/api/organizations": {

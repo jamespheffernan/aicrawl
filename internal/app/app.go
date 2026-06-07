@@ -722,6 +722,16 @@ func (a *App) syncWeb(ctx context.Context, globals globalOptions, args []string)
 		}
 		return writeTextLine(a.stdout, "%s", stats.PrivacyReminder)
 	}
+	if sourceStats == nil && session.CDPURL != "" {
+		stats, err := inspectWebLive(ctx, provider, session, maxConversations)
+		if err != nil {
+			stats = websync.SourceStats{
+				Kind:     "live_list_unavailable",
+				Warnings: []string{"live list candidate inspection unavailable: " + err.Error()},
+			}
+		}
+		sourceStats = &stats
+	}
 	report := websync.BuildReport(session, discovery, freshness, sourceStats, true)
 	if globals.format == "json" || parsed.bools["json"] {
 		return writeJSON(a.stdout, report)
@@ -738,7 +748,7 @@ func (a *App) syncWeb(ctx context.Context, globals globalOptions, args []string)
 }
 
 func inspectWebSource(path, provider string) (websync.SourceStats, error) {
-	stats := websync.SourceStats{Path: path}
+	stats := websync.SourceStats{Kind: "captured_payload", Path: path}
 	emit := func(conversation archive.Conversation, warnings []string) error {
 		stats.Conversations++
 		stats.Messages += len(conversation.Messages)
@@ -755,6 +765,42 @@ func inspectWebSource(path, provider string) (websync.SourceStats, error) {
 		if _, err := claudeweb.StreamFile(path, emit); err != nil {
 			return websync.SourceStats{}, err
 		}
+	default:
+		return websync.SourceStats{}, fmt.Errorf("unsupported web provider %q", provider)
+	}
+	return stats, nil
+}
+
+func inspectWebLive(ctx context.Context, provider string, session browser.SessionPlan, maxConversations int) (websync.SourceStats, error) {
+	spec, err := browser.Provider(provider)
+	if err != nil {
+		return websync.SourceStats{}, err
+	}
+	cdpSession, err := cdp.Open(ctx, cdp.Options{
+		Endpoint:       session.CDPURL,
+		HomeURL:        "",
+		AllowedOrigins: spec.Origins,
+	})
+	if err != nil {
+		return websync.SourceStats{}, err
+	}
+	defer cdpSession.Close(1000, "")
+	stats := websync.SourceStats{Kind: "live_list"}
+	switch provider {
+	case chatgptweb.Provider:
+		inspection, err := chatgptweb.InspectLive(ctx, chatGPTCDPFetcher{session: cdpSession}, chatgptweb.LiveOptions{MaxConversations: maxConversations})
+		if err != nil {
+			return websync.SourceStats{}, err
+		}
+		stats.Conversations = inspection.CandidateConversations
+		stats.Warnings = append(stats.Warnings, inspection.Warnings...)
+	case claudeweb.Provider:
+		inspection, err := claudeweb.InspectLive(ctx, claudeCDPFetcher{session: cdpSession}, claudeweb.LiveOptions{MaxConversations: maxConversations})
+		if err != nil {
+			return websync.SourceStats{}, err
+		}
+		stats.Conversations = inspection.CandidateConversations
+		stats.Warnings = append(stats.Warnings, inspection.Warnings...)
 	default:
 		return websync.SourceStats{}, fmt.Errorf("unsupported web provider %q", provider)
 	}

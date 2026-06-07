@@ -49,6 +49,21 @@ func TestFetchLiveBuildsChatGPTDetailArray(t *testing.T) {
 	}
 }
 
+func TestInspectLiveCountsChatGPTListCandidatesWithoutDetails(t *testing.T) {
+	inspection, err := InspectLive(context.Background(), fakeStatusFetcher{
+		"https://chatgpt.com/backend-api/conversations?offset=0&limit=2&order=updated": {
+			Status: 200,
+			Body:   []byte(`{"items":[{"id":"chatgpt-live-1"},{"id":"chatgpt-live-2"}]}`),
+		},
+	}, LiveOptions{MaxConversations: 2, PageSize: 2})
+	if err != nil {
+		t.Fatalf("InspectLive: %v", err)
+	}
+	if inspection.CandidateConversations != 2 || len(inspection.Warnings) != 0 {
+		t.Fatalf("inspection = %+v, want two clean candidates", inspection)
+	}
+}
+
 func TestFetchLiveSkipsInaccessibleChatGPTDetails(t *testing.T) {
 	payload, err := FetchLive(context.Background(), fakeStatusFetcher{
 		"https://chatgpt.com/backend-api/conversations?offset=0&limit=2&order=updated": {

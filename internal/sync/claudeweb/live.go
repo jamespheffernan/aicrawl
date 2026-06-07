@@ -29,6 +29,59 @@ type LiveOptions struct {
 	PageSize         int
 }
 
+type LiveInspection struct {
+	CandidateConversations int
+	Warnings               []string
+}
+
+func InspectLive(ctx context.Context, fetcher Fetcher, opts LiveOptions) (LiveInspection, error) {
+	if fetcher == nil {
+		return LiveInspection{}, fmt.Errorf("Claude live fetcher is required")
+	}
+	maxConversations := bounded(opts.MaxConversations, defaultMaxConversations, 1, 1000)
+	pageSize := bounded(opts.PageSize, defaultPageSize, 1, 100)
+	orgID, warnings, err := inspectOrganizationID(ctx, fetcher)
+	if err != nil {
+		return LiveInspection{}, err
+	}
+	inspection := LiveInspection{Warnings: warnings}
+	if orgID == "" {
+		return inspection, nil
+	}
+	seen := map[string]bool{}
+	for offset := 0; inspection.CandidateConversations < maxConversations; offset += pageSize {
+		limit := min(pageSize, maxConversations-inspection.CandidateConversations)
+		listURL := fmt.Sprintf("%s/api/organizations/%s/chat_conversations?limit=%d&offset=%d", claudeOrigin, url.PathEscape(orgID), limit, offset)
+		listResp, err := fetcher.Fetch(ctx, listURL)
+		if err != nil {
+			return LiveInspection{}, fmt.Errorf("fetch Claude conversation list: %w", err)
+		}
+		if !okStatus(listResp.Status) {
+			inspection.Warnings = append(inspection.Warnings, fmt.Sprintf("Claude conversation list returned HTTP status %d; login or endpoint shape may need attention", listResp.Status))
+			return inspection, nil
+		}
+		ids, err := extractConversationIDs(listResp.Body, "chat_conversations", "conversations")
+		if err != nil {
+			inspection.Warnings = append(inspection.Warnings, "Claude conversation list could not be parsed for candidate IDs: "+err.Error())
+			return inspection, nil
+		}
+		if len(ids) == 0 {
+			break
+		}
+		for _, id := range ids {
+			if id == "" || seen[id] || inspection.CandidateConversations >= maxConversations {
+				continue
+			}
+			seen[id] = true
+			inspection.CandidateConversations++
+		}
+		if len(ids) < limit {
+			break
+		}
+	}
+	return inspection, nil
+}
+
 func FetchLive(ctx context.Context, fetcher Fetcher, opts LiveOptions) ([]byte, error) {
 	if fetcher == nil {
 		return nil, fmt.Errorf("Claude live fetcher is required")
@@ -106,6 +159,24 @@ func fetchOrganizationID(ctx context.Context, fetcher Fetcher) (string, error) {
 		return "", fmt.Errorf("Claude organizations response did not include an organization id")
 	}
 	return ids[0], nil
+}
+
+func inspectOrganizationID(ctx context.Context, fetcher Fetcher) (string, []string, error) {
+	resp, err := fetcher.Fetch(ctx, claudeOrigin+"/api/organizations")
+	if err != nil {
+		return "", nil, fmt.Errorf("fetch Claude organizations: %w", err)
+	}
+	if !okStatus(resp.Status) {
+		return "", []string{fmt.Sprintf("Claude organizations returned HTTP status %d; login may be required", resp.Status)}, nil
+	}
+	ids, err := extractConversationIDs(resp.Body, "organizations")
+	if err != nil {
+		return "", []string{"Claude organizations response could not be parsed for an organization id: " + err.Error()}, nil
+	}
+	if len(ids) == 0 {
+		return "", []string{"Claude organizations response did not include an organization id"}, nil
+	}
+	return ids[0], nil, nil
 }
 
 func extractConversationIDs(data []byte, arrayKeys ...string) ([]string, error) {

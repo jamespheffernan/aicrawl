@@ -125,7 +125,7 @@ FTS reserved words and operators such as `AND`, `OR`, `NOT`, `NEAR`, and `*` are
 
 ## Privacy Boundary
 
-`aicrawl` v0.1 imports official local exports, captured web payload files, bounded live CDP page-context web payloads, and local agent transcript files. It does not use session-token scraping, browser automation to click export buttons, cloud sync, embeddings, background watches, or network search/export. Import, captured source import, search, SQL, Markdown export, LaunchAgent generation, and CrawlBar manifest generation are local operations; live web sync only talks to the attached browser target and provider same-origin endpoints from that page.
+`aicrawl` v0.1 imports official local exports, captured web payload files, bounded live CDP page-context web payloads, and local agent transcript files. It does not use session-token scraping, browser automation to click export buttons, cloud sync, embeddings, background watches, or network search/export. Import, captured source import, profile-only sync preflight, search, SQL, Markdown export, LaunchAgent generation, and CrawlBar manifest generation are local operations. Live web sync talks to the attached browser target and provider same-origin endpoints from that page. Dry-run CDP sync uses the same browser boundary against an already open provider page but limits provider calls to list-only candidate counting and does not open a provider tab, fetch conversation details, or write the archive.
 
 Private data should stay in ignored local paths such as `imports/private/`, platform runtime directories, SQLite files, logs, and generated Markdown export directories. Public fixtures must be synthetic or redacted.
 

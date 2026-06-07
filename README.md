@@ -60,7 +60,7 @@ v0.1 supports local official export files, captured ChatGPT and Claude web conve
 - `aicrawl sync web --provider chatgpt|claude --cdp-url <url>` attaches to an already authenticated browser target and fetches bounded recent conversation list/detail payloads from page context under `chatgpt_web` or `claude_web`.
 - `aicrawl sync web --provider chatgpt|claude --profile <dir>` launches or reuses a dedicated browser profile with Chrome DevTools enabled. If the profile is new, it opens the provider page and reports `login_required` so you can log in normally and rerun sync.
 - `aicrawl sync web --provider chatgpt|claude --source <json-or-zip>` imports captured provider conversation detail payloads under the same source kinds.
-- `aicrawl sync web --provider chatgpt|claude --dry-run` validates the browser-profile boundary, checks optional redacted browser network captures for list/detail conversation endpoints, reports captured payload counts, and reports archive freshness.
+- `aicrawl sync web --provider chatgpt|claude --dry-run` validates the browser-profile boundary, checks optional redacted browser network captures for list/detail conversation endpoints, reports captured payload counts, and reports archive freshness. When `--cdp-url` is supplied and a provider page is already open, dry-run also performs list-only same-origin browser fetches to count candidate conversations without fetching detail payloads or writing the archive.
 - `aicrawl reconcile <official-export> --provider chatgpt|claude|auto --json` compares a periodic official export against the local archive and reports missing conversation/message coverage plus divergent message projections without writing.
 - `aicrawl schedule launchd --provider chatgpt|claude [--cdp-url <url> | --profile <dir>]` writes a macOS LaunchAgent plist for recurring bounded web sync. It stores only command arguments, not browser credentials.
 - OpenClaw session JSONL with `session` and `message` events.
@@ -70,7 +70,7 @@ v0.1 supports local official export files, captured ChatGPT and Claude web conve
 - Cursor `store.db` SQLite files with visible `user`, `assistant`, and `system` text. Non-JSON blobs, tool calls, and tool results are skipped.
 - Directory import for local transcript roots: OpenClaw/Codex/Claude Code discover `*.jsonl`, Gemini discovers `*.json`, and Cursor discovers `store.db` recursively. Directory reports aggregate source counts without emitting full private paths.
 
-`aicrawl` does not call Claude, ChatGPT, Anthropic, or OpenAI network APIs during import, sync preflight, search, SQL, Markdown export, or CrawlBar manifest generation.
+`aicrawl` does not call Claude, ChatGPT, Anthropic, or OpenAI network APIs during import, captured source import, profile-only sync preflight, search, SQL, Markdown export, or CrawlBar manifest generation. Live web sync and `sync web --dry-run --cdp-url` use same-origin browser page fetches against the provider web app, with authentication kept inside the attached browser profile.
 
 ## Not Supported In v0.1
 

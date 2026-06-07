@@ -141,12 +141,14 @@ With `--dry-run`, the command does not write the archive. It reports:
 
 - `auth_state`: whether a dedicated browser profile exists, a CDP target is configured, or login is still required.
 - `endpoint_contract_state`: `matched`, `partial`, `stale`, `missing`, `empty`, or `not_checked` for a redacted network capture.
-- `source`: candidate conversation, message, attachment, and warning counts when `--source` is present.
+- `source`: candidate conversation, message, attachment, and warning counts. With `--source`, `source.kind` is `captured_payload` and counts parsed detail payloads. With `--cdp-url`, no `--source`, and an already open provider page target, `source.kind` is `live_list` and counts list-only candidate conversations without fetching detail payloads. If the CDP endpoint is reachable but candidate inspection cannot attach to a provider page, dry-run still returns a report with `source.kind` as `live_list_unavailable` and a warning.
 - `freshness`: whether the archive has seen `chatgpt_web` or `claude_web` sync rows.
 
 `--capture` accepts a JSON browser network export or similar structured event dump. Only request URLs, methods, and status codes are inspected. Query strings, fragments, headers, cookies, and bearer tokens are not emitted in the report. In non-dry-run mode, a non-matched capture blocks before archive writes with a stable error prefix such as `contract_stale`, `contract_partial`, `contract_missing`, or `contract_empty`.
 
 Without `--source`, non-dry-run `sync web` uses `--cdp-url` when provided; otherwise it launches the dedicated provider profile and discovers the local CDP endpoint from Chrome's `DevToolsActivePort` file. It does not read browser cookies, tokens, headers, or session storage.
+
+Dry-run with `--cdp-url` still attaches to the provider browser page, but it only fetches the list endpoints needed to count candidates. It does not open a provider tab, fetch conversation details, write temporary payload files, or open/create the archive.
 
 ## `schedule launchd`
 

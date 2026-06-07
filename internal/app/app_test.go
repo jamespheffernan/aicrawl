@@ -17,6 +17,7 @@ import (
 	"github.com/openclaw/aicrawl/internal/archive"
 	"github.com/openclaw/aicrawl/internal/schema"
 	"github.com/openclaw/aicrawl/internal/sync/websync"
+	"github.com/openclaw/crawlkit/control"
 	_ "modernc.org/sqlite"
 	"nhooyr.io/websocket"
 )
@@ -91,6 +92,40 @@ func TestCrawlbarManifestTightensExistingFileMode(t *testing.T) {
 	}
 	if got := info.Mode().Perm(); got != 0o600 {
 		t.Fatalf("manifest mode = %o, want 0600", got)
+	}
+}
+
+func TestMetadataManifestIncludesWebSyncAndLocalTranscriptScopes(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
+
+	var stdout bytes.Buffer
+	cli := New()
+	cli.stdout = &stdout
+	if err := cli.Run(context.Background(), []string{"metadata", "--json"}); err != nil {
+		t.Fatalf("metadata --json: %v", err)
+	}
+	var manifest control.Manifest
+	if err := json.Unmarshal(stdout.Bytes(), &manifest); err != nil {
+		t.Fatalf("decode metadata manifest: %v", err)
+	}
+	for _, command := range []string{"sync-web", "reconcile", "schedule-launchd"} {
+		if _, ok := manifest.Commands[command]; !ok {
+			t.Fatalf("manifest commands missing %q: %+v", command, manifest.Commands)
+		}
+	}
+	for _, capability := range []string{"authenticated-browser-web-sync", "local-agent-transcript-import", "official-export-reconciliation"} {
+		if !containsString(manifest.Capabilities, capability) {
+			t.Fatalf("manifest capabilities missing %q: %+v", capability, manifest.Capabilities)
+		}
+	}
+	for _, scope := range []string{"chatgpt_web", "claude_web", "openclaw_jsonl", "codex_jsonl", "gemini_cli", "claude_code_jsonl", "cursor_store"} {
+		if !containsString(manifest.Privacy.LocalOnlyScopes, scope) {
+			t.Fatalf("manifest local scopes missing %q: %+v", scope, manifest.Privacy.LocalOnlyScopes)
+		}
 	}
 }
 
@@ -1097,6 +1132,98 @@ func TestSyncWebLiveCDPImportsSearchableChatGPTPayload(t *testing.T) {
 	}
 }
 
+func TestSyncWebDryRunCDPReportsLiveListCandidatesWithoutCreatingArchive(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
+
+	server := newFakeChatGPTCDPServer(t)
+	defer server.Close()
+
+	var stdout bytes.Buffer
+	cli := New()
+	cli.stdout = &stdout
+	if err := cli.Run(context.Background(), []string{
+		"sync", "web",
+		"--provider", "chatgpt",
+		"--cdp-url", server.URL,
+		"--max-conversations", "1",
+		"--dry-run",
+		"--json",
+	}); err != nil {
+		t.Fatalf("sync web dry-run CDP: %v", err)
+	}
+	var report websync.Report
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode dry-run CDP report: %v", err)
+	}
+	if report.Source == nil {
+		t.Fatalf("dry-run report missing live source stats: %+v", report)
+	}
+	if report.Source.Kind != "live_list" || report.Source.Conversations != 1 || report.Source.Messages != 0 {
+		t.Fatalf("source stats = %+v, want one list candidate and no detail messages", *report.Source)
+	}
+	stdout.Reset()
+
+	if err := cli.Run(context.Background(), []string{"status", "--json"}); err != nil {
+		t.Fatalf("status after live dry-run: %v", err)
+	}
+	var status struct {
+		State string `json:"state"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &status); err != nil {
+		t.Fatalf("decode status: %v", err)
+	}
+	if status.State != "uninitialized" {
+		t.Fatalf("status after live dry-run = %q, want uninitialized", status.State)
+	}
+}
+
+func TestSyncWebDryRunCDPReportsUnavailableLiveListAsWarning(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/json/list" {
+			http.NotFound(w, r)
+			return
+		}
+		_ = json.NewEncoder(w).Encode([]map[string]any{{
+			"type": "page",
+			"url":  "https://example.invalid/",
+		}})
+	}))
+	defer server.Close()
+
+	var stdout bytes.Buffer
+	cli := New()
+	cli.stdout = &stdout
+	if err := cli.Run(context.Background(), []string{
+		"sync", "web",
+		"--provider", "chatgpt",
+		"--cdp-url", server.URL,
+		"--dry-run",
+		"--json",
+	}); err != nil {
+		t.Fatalf("sync web dry-run CDP without provider page: %v", err)
+	}
+	var report websync.Report
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode dry-run unavailable report: %v", err)
+	}
+	if report.Source == nil || report.Source.Kind != "live_list_unavailable" {
+		t.Fatalf("source stats = %+v, want unavailable live list", report.Source)
+	}
+	if len(report.Warnings) == 0 || !strings.Contains(strings.Join(report.Warnings, "\n"), "candidate inspection unavailable") {
+		t.Fatalf("warnings = %+v, want candidate inspection warning", report.Warnings)
+	}
+}
+
 func TestSyncWebLaunchesMissingProfileAndReportsLoginRequired(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -1324,6 +1451,15 @@ func writeLargeChatGPTFixture(t *testing.T, path string, conversations int) {
 	if err := os.WriteFile(path, []byte(b.String()), 0o600); err != nil {
 		t.Fatalf("write large fixture: %v", err)
 	}
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestInvalidFilterOptionsReturnUsageErrors(t *testing.T) {

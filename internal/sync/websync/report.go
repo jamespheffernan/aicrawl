@@ -15,6 +15,7 @@ type Freshness struct {
 }
 
 type SourceStats struct {
+	Kind          string   `json:"kind,omitempty"`
 	Path          string   `json:"path,omitempty"`
 	Conversations int      `json:"conversations"`
 	Messages      int      `json:"messages"`
