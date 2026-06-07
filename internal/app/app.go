@@ -14,6 +14,9 @@ import (
 	"github.com/openclaw/aicrawl/internal/archive"
 	"github.com/openclaw/aicrawl/internal/ingest/chatgptexport"
 	"github.com/openclaw/aicrawl/internal/ingest/claudeexport"
+	"github.com/openclaw/aicrawl/internal/sync/browser"
+	"github.com/openclaw/aicrawl/internal/sync/webdiscover"
+	"github.com/openclaw/aicrawl/internal/sync/websync"
 	"github.com/openclaw/aicrawl/internal/timefmt"
 	"github.com/openclaw/crawlkit/control"
 )
@@ -59,6 +62,8 @@ func (a *App) Run(ctx context.Context, args []string) error {
 		return a.doctor(ctx, globals, rest)
 	case "import":
 		return a.importSource(ctx, globals, rest)
+	case "sync":
+		return a.sync(ctx, globals, rest)
 	case "conversations":
 		return a.conversations(ctx, globals, rest)
 	case "messages":
@@ -86,6 +91,7 @@ Usage:
   aicrawl metadata [--json]
   aicrawl status [--json]
   aicrawl import <zip-or-json> [--provider claude|chatgpt|auto]
+  aicrawl sync web --provider chatgpt|claude [--profile <dir> | --cdp-url <url>] [--capture <network.json>] --dry-run [--json]
   aicrawl conversations [--provider claude|chatgpt|all] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit 50]
   aicrawl messages --conversation <id> [--path current|all] [--around <message-id>] [--context 5 | --before N --after N]
   aicrawl search <query> [--group messages|conversations] [--provider claude|chatgpt|all] [--scope visible|transcript|attachments|internal|all] [--role user|assistant|system|developer|tool|attachment|unknown|all] [--path current|all] [--sort relevance|recent] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit 25]
@@ -375,6 +381,109 @@ func importStream(ctx context.Context, ar *archive.Archive, path, provider strin
 		return archive.ImportStats{}, err
 	default:
 		return archive.ImportStats{}, fmt.Errorf("unsupported provider %q", provider)
+	}
+}
+
+func (a *App) sync(ctx context.Context, globals globalOptions, args []string) error {
+	if len(args) == 0 || args[0] != "web" {
+		return withExitCode(2, fmt.Errorf("sync requires subcommand web"))
+	}
+	return a.syncWeb(ctx, globals, args[1:])
+}
+
+func (a *App) syncWeb(ctx context.Context, globals globalOptions, args []string) error {
+	parsed, err := parseOptions(args, boolSet("json", "dry-run"), valueSet("provider", "profile", "cdp-url", "capture"))
+	if err != nil {
+		return withExitCode(2, err)
+	}
+	if len(parsed.positionals) != 0 {
+		return withExitCode(2, fmt.Errorf("sync web does not accept positional arguments"))
+	}
+	if !parsed.bools["dry-run"] {
+		return withExitCode(2, fmt.Errorf("sync web currently requires --dry-run while provider contracts are being discovered"))
+	}
+	provider, err := webProvider(parsed.values["provider"])
+	if err != nil {
+		return withExitCode(2, err)
+	}
+	rt, err := resolveRuntime(globals.configPath, false)
+	if err != nil {
+		return err
+	}
+	profilePath := parsed.values["profile"]
+	if profilePath != "" {
+		profilePath = expandPath(profilePath)
+	} else if parsed.values["cdp-url"] == "" {
+		profilePath = filepath.Join(rt.CacheDir, "browser-profiles", provider)
+	}
+	session, err := browser.BuildSessionPlan(browser.SessionOptions{
+		Provider:    provider,
+		ProfilePath: profilePath,
+		CDPURL:      parsed.values["cdp-url"],
+	})
+	if err != nil {
+		return withExitCode(2, err)
+	}
+	var discovery *webdiscover.Report
+	if parsed.values["capture"] != "" {
+		capturePath := expandPath(parsed.values["capture"])
+		capture, err := os.Open(capturePath)
+		if err != nil {
+			return fmt.Errorf("open web capture: %w", err)
+		}
+		report, err := webdiscover.Discover(provider, capture)
+		closeErr := capture.Close()
+		if err != nil {
+			return err
+		}
+		if closeErr != nil {
+			return closeErr
+		}
+		discovery = &report
+	}
+	freshness := a.webFreshness(ctx, rt, session.SourceKind)
+	report := websync.BuildReport(session, discovery, freshness, true)
+	if globals.format == "json" || parsed.bools["json"] {
+		return writeJSON(a.stdout, report)
+	}
+	if err := writeTextLine(a.stdout, "%s web sync: %s auth, %s contract, %s freshness", report.Provider, report.AuthState, report.EndpointContractState, report.Freshness.State); err != nil {
+		return err
+	}
+	for _, warning := range report.Warnings {
+		if err := writeTextLine(a.stdout, "warning: %s", warning); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (a *App) webFreshness(ctx context.Context, rt runtime, sourceKind string) websync.Freshness {
+	freshness := websync.Freshness{State: "archive_missing", SourceKind: sourceKind}
+	if !archive.Exists(rt.DBPath) {
+		return freshness
+	}
+	ar, err := archive.OpenReadOnly(ctx, rt.DBPath)
+	if err != nil {
+		freshness.State = "archive_unreadable"
+		return freshness
+	}
+	defer ar.Close()
+	state, ok, err := ar.SyncState(ctx, sourceKind)
+	if err != nil {
+		freshness.State = "sync_state_unreadable"
+		return freshness
+	}
+	if !ok {
+		freshness.State = "never_synced"
+		return freshness
+	}
+	return websync.Freshness{
+		State:             "seen",
+		SourceKind:        state.SourceKind,
+		LastImportID:      state.LastImportID,
+		LastImportAt:      state.LastImportAt,
+		ConversationCount: state.ConversationCount,
+		MessageCount:      state.MessageCount,
 	}
 }
 
@@ -894,5 +1003,17 @@ func importProvider(value string) (string, error) {
 		return value, nil
 	default:
 		return "", fmt.Errorf("--provider must be claude, chatgpt, or auto")
+	}
+}
+
+func webProvider(value string) (string, error) {
+	if value == "" {
+		return "", fmt.Errorf("--provider is required")
+	}
+	switch value {
+	case "chatgpt", "claude":
+		return value, nil
+	default:
+		return "", fmt.Errorf("--provider must be chatgpt or claude")
 	}
 }

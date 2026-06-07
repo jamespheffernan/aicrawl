@@ -18,6 +18,7 @@ GOWORK=off go build ./cmd/aicrawl
 aicrawl init
 aicrawl import ./claude-export.zip --provider claude
 aicrawl import ./chatgpt-export.zip --provider chatgpt
+aicrawl sync web --provider chatgpt --dry-run --json
 aicrawl conversations --limit 25
 aicrawl messages --conversation <conversation-id> --path current
 aicrawl search "known phrase"
@@ -39,18 +40,19 @@ aicrawl doctor --json
 
 ## Supported Sources
 
-v0.1 supports local files only:
+v0.1 supports local official export files plus an experimental web-sync preflight:
 
 - Claude official export ZIPs or extracted JSON containing conversation data.
 - ChatGPT official export ZIPs or extracted JSON containing `conversations.json`, export batch JSON, or top-level conversations with `mapping`.
+- `aicrawl sync web --provider chatgpt|claude --dry-run` validates the browser-profile boundary, checks optional redacted browser network captures for list/detail conversation endpoints, and reports archive freshness for `chatgpt_web` or `claude_web`.
 
-`aicrawl` does not call Claude, ChatGPT, Anthropic, or OpenAI network APIs during import, search, SQL, Markdown export, or CrawlBar manifest generation.
+`aicrawl` does not call Claude, ChatGPT, Anthropic, or OpenAI network APIs during import, sync preflight, search, SQL, Markdown export, or CrawlBar manifest generation.
 
 ## Not Supported In v0.1
 
 - Session-token scraping.
 - Browser automation to click export buttons.
-- Private product APIs.
+- Live transcript writes from private product APIs.
 - Enterprise compliance API ingestion.
 - Embeddings or semantic search.
 - TUI, watch daemon, scheduler, cloud sync, mirror, publish, or backups.

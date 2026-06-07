@@ -312,6 +312,81 @@ func TestSearchMessagesContextAndSingleConversationExportCLI(t *testing.T) {
 	}
 }
 
+func TestSyncWebDryRunReportsContractAndRedactsCapture(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
+
+	capturePath := filepath.Join(t.TempDir(), "chatgpt-capture.json")
+	capture := `{
+		"log": {
+			"entries": [
+				{
+					"request": {
+						"method": "GET",
+						"url": "https://chatgpt.com/backend-api/conversations?offset=0&access_token=secret"
+					},
+					"response": {"status": 200}
+				},
+				{
+					"request": {
+						"method": "GET",
+						"url": "https://chatgpt.com/backend-api/conversation/abc?access_token=secret"
+					},
+					"response": {"status": 200}
+				}
+			]
+		}
+	}`
+	if err := os.WriteFile(capturePath, []byte(capture), 0o600); err != nil {
+		t.Fatalf("write capture: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	cli := New()
+	cli.stdout = &stdout
+	err := cli.Run(context.Background(), []string{
+		"sync", "web",
+		"--provider", "chatgpt",
+		"--profile", filepath.Join(home, "missing-profile"),
+		"--capture", capturePath,
+		"--dry-run",
+		"--json",
+	})
+	if err != nil {
+		t.Fatalf("sync web dry-run: %v", err)
+	}
+	if strings.Contains(stdout.String(), "access_token") || strings.Contains(stdout.String(), "secret") || strings.Contains(stdout.String(), "/conversation/abc") {
+		t.Fatalf("sync web output leaked capture query material: %s", stdout.String())
+	}
+	var report struct {
+		Provider              string `json:"provider"`
+		SourceKind            string `json:"source_kind"`
+		AuthState             string `json:"auth_state"`
+		EndpointContractState string `json:"endpoint_contract_state"`
+		Freshness             struct {
+			State string `json:"state"`
+		} `json:"freshness"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode sync web report: %v", err)
+	}
+	if report.Provider != "chatgpt" || report.SourceKind != "chatgpt_web" {
+		t.Fatalf("provider/source kind = %s/%s, want chatgpt/chatgpt_web", report.Provider, report.SourceKind)
+	}
+	if report.AuthState != "login_required" {
+		t.Fatalf("auth state = %q, want login_required", report.AuthState)
+	}
+	if report.EndpointContractState != "matched" {
+		t.Fatalf("contract state = %q, want matched", report.EndpointContractState)
+	}
+	if report.Freshness.State != "archive_missing" {
+		t.Fatalf("freshness state = %q, want archive_missing", report.Freshness.State)
+	}
+}
+
 func writeLargeChatGPTFixture(t *testing.T, path string, conversations int) {
 	t.Helper()
 	var b strings.Builder
@@ -367,6 +442,16 @@ func TestInvalidFilterOptionsReturnUsageErrors(t *testing.T) {
 			name: "import provider",
 			args: []string{"import", "source.fixture.json", "--provider", "openai"},
 			want: "--provider",
+		},
+		{
+			name: "sync web provider",
+			args: []string{"sync", "web", "--provider", "gemini", "--dry-run"},
+			want: "--provider",
+		},
+		{
+			name: "sync web requires dry run",
+			args: []string{"sync", "web", "--provider", "chatgpt"},
+			want: "--dry-run",
 		},
 		{
 			name: "conversations limit",

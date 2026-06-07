@@ -3,6 +3,7 @@ package archive
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -43,6 +44,32 @@ func (a *Archive) LastImportAt(ctx context.Context) (string, error) {
 		return "", err
 	}
 	return value.String, nil
+}
+
+func (a *Archive) SyncState(ctx context.Context, sourceKind string) (SyncState, bool, error) {
+	var state SyncState
+	var lastImportID sql.NullString
+	var lastImportAt sql.NullString
+	err := a.DB().QueryRowContext(ctx, `select source_kind, last_import_id, last_import_at,
+		conversation_count, message_count, updated_at
+		from sync_state
+		where source_kind = ?`, sourceKind).Scan(
+		&state.SourceKind,
+		&lastImportID,
+		&lastImportAt,
+		&state.ConversationCount,
+		&state.MessageCount,
+		&state.UpdatedAt,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return SyncState{}, false, nil
+	}
+	if err != nil {
+		return SyncState{}, false, err
+	}
+	state.LastImportID = lastImportID.String
+	state.LastImportAt = lastImportAt.String
+	return state, true, nil
 }
 
 func (a *Archive) FTSReady(ctx context.Context) error {

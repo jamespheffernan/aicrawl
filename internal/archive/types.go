@@ -84,6 +84,15 @@ type Counts struct {
 	Attachments   int64 `json:"attachments"`
 }
 
+type SyncState struct {
+	SourceKind        string `json:"source_kind"`
+	LastImportID      string `json:"last_import_id,omitempty"`
+	LastImportAt      string `json:"last_import_at,omitempty"`
+	ConversationCount int64  `json:"conversation_count"`
+	MessageCount      int64  `json:"message_count"`
+	UpdatedAt         string `json:"updated_at"`
+}
+
 type ConversationRow struct {
 	ID           string `json:"id"`
 	Provider     string `json:"provider"`

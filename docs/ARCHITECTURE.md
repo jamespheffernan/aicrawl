@@ -18,11 +18,15 @@ The importer does not delete source exports. Those files still contain private d
 ```text
 cmd/aicrawl/              CLI entry point
 internal/app/             command parsing, runtime paths, JSON/text output, CrawlBar manifest
-internal/archive/         SQLite reads/writes, import ledger, search, read-only SQL, Markdown export
+internal/archive/         SQLite reads/writes, import ledger, sync-state reads, search, read-only SQL, Markdown export
 internal/schema/          schema migrations using PRAGMA user_version
 internal/ingest/
   claudeexport/           official Claude export parser
   chatgptexport/          official ChatGPT export parser
+internal/sync/
+  browser/                browser-profile and CDP preflight for web sync
+  webdiscover/            redacted network capture contract discovery
+  websync/                web sync report model and privacy boundary
 internal/security/        ZIP safety, source size guards, private file handling helpers
 internal/textnorm/        searchable text normalization and safe FTS query construction
 testdata/redacted/        small synthetic fixtures only
@@ -46,6 +50,22 @@ flowchart LR
 The source reader accepts local JSON files and ZIP files with JSON entries. It rejects unsafe ZIP entries such as absolute paths, traversal, and symlinks. Official top-level conversation arrays are streamed so large exports do not have to be buffered as one JSON blob.
 
 Every import is keyed by source kind, provider, and source hash. Re-importing the same file returns the existing ledger row and does not duplicate conversations, messages, edges, attachments, or FTS entries.
+
+## Web Sync Preflight
+
+```mermaid
+flowchart LR
+  BrowserProfile["Dedicated browser profile or CDP URL"] --> SessionPlan["browser session preflight"]
+  NetworkCapture["Redacted network JSON capture"] --> ContractDiscovery["endpoint contract discovery"]
+  ArchiveState["SQLite sync_state"] --> Freshness["freshness report"]
+  SessionPlan --> Report["sync web dry-run report"]
+  ContractDiscovery --> Report
+  Freshness --> Report
+```
+
+`aicrawl sync web` is the first browser-profile lane. It validates the intended auth boundary and reports whether a ChatGPT or Claude capture still exposes recognizable conversation list/detail calls. The command is read-only in v0.1: it does not drive a browser, copy auth material, call private product APIs, or write transcripts. It exists to make the contract and freshness state visible before provider-specific live sync adapters are allowed to write into the archive.
+
+The network discovery parser consumes structured JSON captures, walks nested request objects, and emits only sanitized origins and paths. Query strings, fragments, headers, cookies, and authorization values are not included in the report.
 
 ## Data Model
 
@@ -81,7 +101,7 @@ FTS reserved words and operators such as `AND`, `OR`, `NOT`, `NEAR`, and `*` are
 
 ## Privacy Boundary
 
-`aicrawl` v0.1 uses official local exports only. It does not use session-token scraping, private product APIs, browser automation, cloud sync, embeddings, background watches, or network import/search/export. Import, search, SQL, Markdown export, and CrawlBar manifest generation are local operations.
+`aicrawl` v0.1 imports official local exports and can run read-only web-sync preflight checks. It does not use session-token scraping, browser automation, live private product API transcript writes, cloud sync, embeddings, background watches, or network import/search/export. Import, sync preflight, search, SQL, Markdown export, and CrawlBar manifest generation are local operations.
 
 Private data should stay in ignored local paths such as `imports/private/`, platform runtime directories, SQLite files, logs, and generated Markdown export directories. Public fixtures must be synthetic or redacted.
 

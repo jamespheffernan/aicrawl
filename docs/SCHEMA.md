@@ -147,7 +147,7 @@ The tokenizer is `unicode61`. User queries are normalized and safely quoted by `
 
 ### `sync_state`
 
-Local summary table for source-kind status. v0.1 uses it for import/status bookkeeping, not network sync.
+Local summary table for source-kind status. v0.1 writes it during imports and reads it during `sync web --dry-run` to report whether web source kinds such as `chatgpt_web` or `claude_web` have ever been seen. Live web transcript writes are not enabled yet.
 
 ## Raw Payload Preservation
 

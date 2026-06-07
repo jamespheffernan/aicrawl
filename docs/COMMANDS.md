@@ -12,6 +12,7 @@ Usage:
   aicrawl metadata [--json]
   aicrawl status [--json]
   aicrawl import <zip-or-json> [--provider claude|chatgpt|auto]
+  aicrawl sync web --provider chatgpt|claude [--profile <dir> | --cdp-url <url>] [--capture <network.json>] --dry-run [--json]
   aicrawl conversations [--provider claude|chatgpt|all] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit 50]
   aicrawl messages --conversation <id> [--path current|all] [--around <message-id>] [--context 5 | --before N --after N]
   aicrawl search <query> [--group messages|conversations] [--provider claude|chatgpt|all] [--scope visible|transcript|attachments|internal|all] [--role user|assistant|system|developer|tool|attachment|unknown|all] [--path current|all] [--sort relevance|recent] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit 25]
@@ -85,6 +86,24 @@ aicrawl import ./export.zip --provider auto
 ```
 
 Provider defaults to auto-detection when omitted or set to `auto`. Imports are idempotent by source kind, provider, and source hash. Text output includes a reminder that source exports still contain private data.
+
+## `sync web`
+
+Runs the browser-profile preflight and optional redacted endpoint-contract discovery for ChatGPT or Claude web capture.
+
+```bash
+aicrawl sync web --provider chatgpt --dry-run --json
+aicrawl sync web --provider claude --profile ~/.cache/aicrawl/browser-profiles/claude --dry-run
+aicrawl sync web --provider chatgpt --cdp-url http://127.0.0.1:9222 --capture ./chatgpt-network.json --dry-run --json
+```
+
+This command is intentionally read-only in v0.1. It does not import transcripts or persist browser credentials. It reports:
+
+- `auth_state`: whether a dedicated browser profile exists, a CDP target is configured, or login is still required.
+- `endpoint_contract_state`: `matched`, `partial`, `stale`, `missing`, `empty`, or `not_checked` for a redacted network capture.
+- `freshness`: whether the archive has seen `chatgpt_web` or `claude_web` sync rows.
+
+`--capture` accepts a JSON browser network export or similar structured event dump. Only request URLs, methods, and status codes are inspected. Query strings, fragments, headers, cookies, and bearer tokens are not emitted in the report.
 
 ## `conversations`
 
