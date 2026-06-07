@@ -2,7 +2,10 @@ module github.com/openclaw/aicrawl
 
 go 1.26.2
 
-require github.com/openclaw/crawlkit v0.11.0
+require (
+	github.com/openclaw/crawlkit v0.11.0
+	nhooyr.io/websocket v1.8.17
+)
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect

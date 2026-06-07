@@ -75,6 +75,12 @@ Run:
 "$BIN" crawlbar manifest --out "$SMOKE/aicrawl.crawlbar.json"
 ```
 
+Optional live-browser smoke, only when a logged-in provider browser is already running with a Chrome DevTools endpoint:
+
+```bash
+"$BIN" sync web --provider chatgpt --cdp-url http://127.0.0.1:9222 --max-conversations 1 --json
+```
+
 Expected result:
 
 - JSON commands emit valid JSON.

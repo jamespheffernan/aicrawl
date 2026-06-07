@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +14,7 @@ import (
 
 	"github.com/openclaw/aicrawl/internal/archive"
 	"github.com/openclaw/aicrawl/internal/schema"
+	"nhooyr.io/websocket"
 )
 
 func TestDoctorJSONReportsErrorStateForInspectionErrors(t *testing.T) {
@@ -532,6 +535,132 @@ func TestImportLocalTranscriptSourcesAreSearchable(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSyncWebLiveCDPImportsSearchableChatGPTPayload(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
+
+	server := newFakeChatGPTCDPServer(t)
+	defer server.Close()
+
+	var stdout bytes.Buffer
+	cli := New()
+	cli.stdout = &stdout
+	if err := cli.Run(context.Background(), []string{
+		"sync", "web",
+		"--provider", "chatgpt",
+		"--cdp-url", server.URL,
+		"--max-conversations", "1",
+		"--json",
+	}); err != nil {
+		t.Fatalf("sync web live CDP: %v", err)
+	}
+	var stats archive.ImportStats
+	if err := json.Unmarshal(stdout.Bytes(), &stats); err != nil {
+		t.Fatalf("decode sync stats: %v", err)
+	}
+	if stats.Provider != "chatgpt" || stats.SourceKind != "chatgpt_web" || stats.Conversations != 1 || stats.Messages != 1 {
+		t.Fatalf("stats = %+v, want one live chatgpt conversation/message", stats)
+	}
+	stdout.Reset()
+
+	if err := cli.Run(context.Background(), []string{"search", "live cdp chatgpt assistant phrase", "--provider", "chatgpt", "--json"}); err != nil {
+		t.Fatalf("search live CDP import: %v", err)
+	}
+	var hits []archive.SearchHit
+	if err := json.Unmarshal(stdout.Bytes(), &hits); err != nil {
+		t.Fatalf("decode search hits: %v", err)
+	}
+	if len(hits) != 1 {
+		t.Fatalf("hits = %+v, want one live CDP hit", hits)
+	}
+}
+
+func newFakeChatGPTCDPServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	var wsURL string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/json/list":
+			_ = json.NewEncoder(w).Encode([]map[string]any{{
+				"type":                 "page",
+				"url":                  "https://chatgpt.com/",
+				"webSocketDebuggerUrl": wsURL,
+			}})
+		case "/devtools/page/1":
+			conn, err := websocket.Accept(w, r, nil)
+			if err != nil {
+				t.Errorf("accept websocket: %v", err)
+				return
+			}
+			defer conn.Close(websocket.StatusNormalClosure, "")
+			for {
+				_, data, err := conn.Read(context.Background())
+				if err != nil {
+					return
+				}
+				var cmd struct {
+					ID     int            `json:"id"`
+					Method string         `json:"method"`
+					Params map[string]any `json:"params"`
+				}
+				if err := json.Unmarshal(data, &cmd); err != nil {
+					t.Errorf("decode command: %v", err)
+					return
+				}
+				expression, _ := cmd.Params["expression"].(string)
+				body := `{}`
+				status := 200
+				switch {
+				case strings.Contains(expression, "/backend-api/conversations?"):
+					body = `{"items":[{"id":"live-cdp-chatgpt"}]}`
+				case strings.Contains(expression, "/backend-api/conversation/live-cdp-chatgpt"):
+					body = `{
+  "id": "live-cdp-chatgpt",
+  "title": "Live CDP ChatGPT",
+  "mapping": {
+    "assistant": {
+      "id": "assistant",
+      "parent": null,
+      "children": [],
+      "message": {
+        "author": {"role": "assistant"},
+        "content": {"parts": ["live cdp chatgpt assistant phrase"]}
+      }
+    }
+  }
+}`
+				default:
+					status = 404
+				}
+				response := map[string]any{
+					"id": cmd.ID,
+					"result": map[string]any{
+						"result": map[string]any{
+							"type": "object",
+							"value": map[string]any{
+								"status": status,
+								"url":    "https://chatgpt.com/synthetic",
+								"text":   body,
+							},
+						},
+					},
+				}
+				data, _ = json.Marshal(response)
+				if err := conn.Write(context.Background(), websocket.MessageText, data); err != nil {
+					return
+				}
+			}
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	wsURL = "ws" + strings.TrimPrefix(server.URL, "http") + "/devtools/page/1"
+	return server
 }
 
 func writeLargeChatGPTFixture(t *testing.T, path string, conversations int) {

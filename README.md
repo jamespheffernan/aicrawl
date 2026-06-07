@@ -1,6 +1,6 @@
 # aicrawl
 
-`aicrawl` is a local-first archive for personal AI conversation history. The v0.1 CLI imports official Claude and ChatGPT export ZIP/JSON files, captured ChatGPT and Claude web conversation payloads, and local OpenClaw/Codex/Gemini/Claude Code session files into a private SQLite archive, preserves raw JSON payloads, indexes searchable message and extracted attachment/file text with FTS5, and exports conversations as Markdown.
+`aicrawl` is a local-first archive for personal AI conversation history. The v0.1 CLI imports official Claude and ChatGPT export ZIP/JSON files, syncs recent ChatGPT and Claude web conversations through an attached authenticated browser target or captured payload files, and imports local OpenClaw/Codex/Gemini/Claude Code session files into a private SQLite archive. It preserves raw JSON payloads, indexes searchable message and extracted attachment/file text with FTS5, and exports conversations as Markdown.
 
 The project follows the OpenClaw pattern: provider-specific parsing lives in `aicrawl`, while reusable local archive mechanics use `github.com/openclaw/crawlkit` where it fits.
 
@@ -23,6 +23,7 @@ aicrawl import ./codex-session.jsonl --provider codex
 aicrawl import ./gemini-session.json --provider gemini
 aicrawl import ./claude-code-session.jsonl --provider claude-code
 aicrawl sync web --provider chatgpt --source ./chatgpt-web-conversation.json
+aicrawl sync web --provider chatgpt --cdp-url http://127.0.0.1:9222 --max-conversations 50
 aicrawl sync web --provider chatgpt --dry-run --json
 aicrawl conversations --limit 25
 aicrawl messages --conversation <conversation-id> --path current
@@ -49,7 +50,8 @@ v0.1 supports local official export files, captured ChatGPT and Claude web conve
 
 - Claude official export ZIPs or extracted JSON containing conversation data.
 - ChatGPT official export ZIPs or extracted JSON containing `conversations.json`, export batch JSON, or top-level conversations with `mapping`.
-- `aicrawl sync web --provider chatgpt|claude --source <json-or-zip>` imports captured provider conversation detail payloads under `chatgpt_web` or `claude_web`.
+- `aicrawl sync web --provider chatgpt|claude --cdp-url <url>` attaches to an already authenticated browser target and fetches bounded recent conversation list/detail payloads from page context under `chatgpt_web` or `claude_web`.
+- `aicrawl sync web --provider chatgpt|claude --source <json-or-zip>` imports captured provider conversation detail payloads under the same source kinds.
 - `aicrawl sync web --provider chatgpt|claude --dry-run` validates the browser-profile boundary, checks optional redacted browser network captures for list/detail conversation endpoints, reports captured payload counts, and reports archive freshness.
 - OpenClaw session JSONL with `session` and `message` events.
 - Codex rollout JSONL with `session_meta` and `response_item` message events.
@@ -61,8 +63,8 @@ v0.1 supports local official export files, captured ChatGPT and Claude web conve
 ## Not Supported In v0.1
 
 - Session-token scraping.
+- Automatic browser process launch and login.
 - Browser automation to click export buttons.
-- Live browser fetching through CDP/page-context calls.
 - Cursor local store ingestion.
 - Enterprise compliance API ingestion.
 - Embeddings or semantic search.

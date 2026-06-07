@@ -12,7 +12,7 @@ Usage:
   aicrawl metadata [--json]
   aicrawl status [--json]
   aicrawl import <zip-json-or-jsonl> [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|auto]
-  aicrawl sync web --provider chatgpt|claude [--source <json-or-zip>] [--profile <dir> | --cdp-url <url>] [--capture <network.json>] [--dry-run] [--json]
+  aicrawl sync web --provider chatgpt|claude [--source <json-or-zip>] [--profile <dir> | --cdp-url <url>] [--capture <network.json>] [--max-conversations 50] [--dry-run] [--json]
   aicrawl conversations [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|all] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit 50]
   aicrawl messages --conversation <id> [--path current|all] [--around <message-id>] [--context 5 | --before N --after N]
   aicrawl search <query> [--group messages|conversations] [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|all] [--scope visible|transcript|attachments|internal|all] [--role user|assistant|system|developer|tool|attachment|unknown|all] [--path current|all] [--sort relevance|recent] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit 25]
@@ -93,17 +93,22 @@ Provider defaults to official Claude/ChatGPT export auto-detection when omitted 
 
 ## `sync web`
 
-Runs browser-profile preflight, optional redacted endpoint-contract discovery, and captured payload import for ChatGPT or Claude web data.
+Runs browser-profile preflight, optional redacted endpoint-contract discovery, captured payload import, or live CDP page-context fetch for ChatGPT or Claude web data.
 
 ```bash
 aicrawl sync web --provider chatgpt --dry-run --json
 aicrawl sync web --provider chatgpt --source ./chatgpt-web-conversation.json
 aicrawl sync web --provider claude --source ./claude-web-conversation.json --json
+aicrawl sync web --provider chatgpt --cdp-url http://127.0.0.1:9222 --max-conversations 50 --json
 aicrawl sync web --provider claude --profile ~/.cache/aicrawl/browser-profiles/claude --dry-run
 aicrawl sync web --provider chatgpt --cdp-url http://127.0.0.1:9222 --capture ./chatgpt-network.json --dry-run --json
 ```
 
 With `--source`, the command imports captured provider conversation detail payloads into the local archive using source kinds `chatgpt_web` or `claude_web`. Imports are idempotent by source kind, provider, and source hash.
+
+With `--cdp-url` and no `--source`, non-dry-run mode attaches to an already running browser's Chrome DevTools endpoint, finds or opens a provider page target, and runs same-origin `fetch()` calls from that page context. Authentication stays inside the browser profile. The fetched detail batch is written to a private temporary cache file, imported through the normal archive path, then removed.
+
+`--max-conversations` bounds live web sync to the most recent list/detail records fetched in one run. It defaults to `50`.
 
 With `--dry-run`, the command does not write the archive. It reports:
 
@@ -114,7 +119,7 @@ With `--dry-run`, the command does not write the archive. It reports:
 
 `--capture` accepts a JSON browser network export or similar structured event dump. Only request URLs, methods, and status codes are inspected. Query strings, fragments, headers, cookies, and bearer tokens are not emitted in the report.
 
-Live browser fetching through CDP/page-context calls is not enabled yet. Without `--source`, non-dry-run `sync web` exits with a usage error instead of pretending to sync.
+Without `--source`, non-dry-run `sync web` requires `--cdp-url`. Profile-only mode is still a preflight surface until browser launch orchestration is added.
 
 ## `conversations`
 

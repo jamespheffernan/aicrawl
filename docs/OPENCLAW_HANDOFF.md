@@ -42,7 +42,7 @@ Maintainers should review:
 
 ## Privacy Posture
 
-v0.1 imports local official exports, captured ChatGPT/Claude web detail payload files, and OpenClaw/Codex/Gemini local session files. It can also run read-only web-sync preflight. It does not make network calls for import, sync source import, sync preflight, search, SQL, Markdown export, or CrawlBar manifest generation. It does not implement session-token scraping, live CDP/page-context fetching, browser automation, background sync, or cloud storage.
+v0.1 imports local official exports, captured ChatGPT/Claude web detail payload files, bounded live CDP page-context ChatGPT/Claude payloads, and OpenClaw/Codex/Gemini/Claude Code local session files. It can also run read-only web-sync preflight. It does not make network calls for file import, sync source import, sync preflight, search, SQL, Markdown export, or CrawlBar manifest generation. It does not implement session-token scraping, browser automation to click export buttons, background sync, automatic browser launch/login, or cloud storage.
 
 Private data is protected by:
 
@@ -69,7 +69,7 @@ Private data is protected by:
 Future work should stay out of v0.1 unless separately approved:
 
 - Cursor local store ingestion;
-- live ChatGPT/Claude browser-profile sync after endpoint contracts are proven current;
+- automatic browser launch and scheduler wiring for ChatGPT/Claude sync;
 - richer attachment extraction;
 - schema migrations beyond v1;
 - packaged releases;

@@ -10,7 +10,7 @@
 4. Use `conversations`, `messages`, `search`, `sql`, or `export markdown` against the local archive.
 5. Optionally run `aicrawl crawlbar manifest` so CrawlBar can discover the local control surface.
 
-For captured web payloads, run `aicrawl sync web --provider chatgpt|claude --source <json-or-zip>`. Dry-run mode reports auth state, contract state, source counts, and freshness without writing.
+For web payloads, run `aicrawl sync web --provider chatgpt|claude --cdp-url <url>` against an already authenticated browser target, or pass `--source <json-or-zip>` for captured detail payloads. Dry-run mode reports auth state, contract state, source counts, and freshness without writing.
 
 The importer does not delete source files. Those files still contain private data after import.
 
@@ -31,6 +31,7 @@ internal/ingest/
   localtext/              shared local transcript text/timestamp helpers
 internal/sync/
   browser/                browser-profile and CDP preflight for web sync
+  cdp/                    narrow Chrome DevTools page-context fetch client
   webdiscover/            redacted network capture contract discovery
   chatgptweb/             captured ChatGPT web payload adapter
   claudeweb/              captured Claude web payload adapter
@@ -67,13 +68,16 @@ flowchart LR
   NetworkCapture["Redacted network JSON capture"] --> ContractDiscovery["endpoint contract discovery"]
   ArchiveState["SQLite sync_state"] --> Freshness["freshness report"]
   SourcePayload["Captured detail payload JSON/ZIP"] --> WebAdapter["web payload adapter"]
+  CDP["CDP page-context fetch"] --> WebAdapter
   WebAdapter --> Archive["archive import transaction"]
   SessionPlan --> Report["sync web report"]
   ContractDiscovery --> Report
   Freshness --> Report
 ```
 
-`aicrawl sync web` is the first browser-profile lane. It validates the intended auth boundary and reports whether a ChatGPT or Claude capture still exposes recognizable conversation list/detail calls. With `--source`, it imports captured conversation detail payloads under `chatgpt_web` or `claude_web`; without `--source`, non-dry-run mode exits because live browser page-context fetching is not implemented yet.
+`aicrawl sync web` is the browser-profile lane. It validates the intended auth boundary and reports whether a ChatGPT or Claude capture still exposes recognizable conversation list/detail calls. With `--cdp-url`, it attaches to an already running browser, finds or opens a provider page, and runs same-origin list/detail `fetch()` calls from page context. With `--source`, it imports captured conversation detail payloads under `chatgpt_web` or `claude_web`.
+
+Live CDP fetches do not copy cookies, bearer tokens, session headers, or browser storage into config. The fetched detail batch is written to a private temporary cache file, imported through the same source-hash/idempotency path as captured payload files, then removed.
 
 The network discovery parser consumes structured JSON captures, walks nested request objects, and emits only sanitized origins and paths. Query strings, fragments, headers, cookies, and authorization values are not included in the report.
 
@@ -111,7 +115,7 @@ FTS reserved words and operators such as `AND`, `OR`, `NOT`, `NEAR`, and `*` are
 
 ## Privacy Boundary
 
-`aicrawl` v0.1 imports official local exports and captured web payload files, and can run read-only web-sync preflight checks. It does not use session-token scraping, live CDP/page-context fetching, browser automation, cloud sync, embeddings, background watches, or network import/search/export. Import, sync source import, sync preflight, search, SQL, Markdown export, and CrawlBar manifest generation are local operations.
+`aicrawl` v0.1 imports official local exports, captured web payload files, bounded live CDP page-context web payloads, and local agent transcript files. It does not use session-token scraping, browser automation to click export buttons, cloud sync, embeddings, background watches, or network search/export. Import, captured source import, search, SQL, Markdown export, and CrawlBar manifest generation are local operations; live web sync only talks to the attached browser target and provider same-origin endpoints from that page.
 
 Private data should stay in ignored local paths such as `imports/private/`, platform runtime directories, SQLite files, logs, and generated Markdown export directories. Public fixtures must be synthetic or redacted.
 

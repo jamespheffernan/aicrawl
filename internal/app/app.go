@@ -19,6 +19,7 @@ import (
 	"github.com/openclaw/aicrawl/internal/ingest/geminicli"
 	"github.com/openclaw/aicrawl/internal/ingest/openclawjsonl"
 	"github.com/openclaw/aicrawl/internal/sync/browser"
+	"github.com/openclaw/aicrawl/internal/sync/cdp"
 	"github.com/openclaw/aicrawl/internal/sync/chatgptweb"
 	"github.com/openclaw/aicrawl/internal/sync/claudeweb"
 	"github.com/openclaw/aicrawl/internal/sync/webdiscover"
@@ -97,7 +98,7 @@ Usage:
   aicrawl metadata [--json]
   aicrawl status [--json]
   aicrawl import <zip-json-or-jsonl> [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|auto]
-  aicrawl sync web --provider chatgpt|claude [--source <json-or-zip>] [--profile <dir> | --cdp-url <url>] [--capture <network.json>] [--dry-run] [--json]
+  aicrawl sync web --provider chatgpt|claude [--source <json-or-zip>] [--profile <dir> | --cdp-url <url>] [--capture <network.json>] [--max-conversations 50] [--dry-run] [--json]
   aicrawl conversations [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|all] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit 50]
   aicrawl messages --conversation <id> [--path current|all] [--around <message-id>] [--context 5 | --before N --after N]
   aicrawl search <query> [--group messages|conversations] [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|all] [--scope visible|transcript|attachments|internal|all] [--role user|assistant|system|developer|tool|attachment|unknown|all] [--path current|all] [--sort relevance|recent] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit 25]
@@ -418,7 +419,7 @@ func (a *App) sync(ctx context.Context, globals globalOptions, args []string) er
 }
 
 func (a *App) syncWeb(ctx context.Context, globals globalOptions, args []string) error {
-	parsed, err := parseOptions(args, boolSet("json", "dry-run"), valueSet("provider", "profile", "cdp-url", "capture", "source"))
+	parsed, err := parseOptions(args, boolSet("json", "dry-run"), valueSet("provider", "profile", "cdp-url", "capture", "source", "max-conversations"))
 	if err != nil {
 		return withExitCode(2, err)
 	}
@@ -434,8 +435,12 @@ func (a *App) syncWeb(ctx context.Context, globals globalOptions, args []string)
 		sourcePath = expandPath(sourcePath)
 	}
 	dryRun := parsed.bools["dry-run"]
-	if !dryRun && sourcePath == "" {
-		return withExitCode(2, fmt.Errorf("sync web live browser fetch is not implemented yet; pass --source with captured provider payloads or use --dry-run"))
+	if !dryRun && sourcePath == "" && parsed.values["cdp-url"] == "" {
+		return withExitCode(2, fmt.Errorf("sync web live fetch requires --cdp-url; pass --source with captured provider payloads or use --dry-run"))
+	}
+	maxConversations, err := parsePositiveOption("max-conversations", parsed.values["max-conversations"], 50)
+	if err != nil {
+		return withExitCode(2, err)
 	}
 	rt, err := resolveRuntime(globals.configPath, !dryRun)
 	if err != nil {
@@ -490,7 +495,12 @@ func (a *App) syncWeb(ctx context.Context, globals globalOptions, args []string)
 			return err
 		}
 		defer ar.Close()
-		stats, err := syncWebSource(ctx, ar, sourcePath, provider)
+		var stats archive.ImportStats
+		if sourcePath != "" {
+			stats, err = syncWebSource(ctx, ar, sourcePath, provider)
+		} else {
+			stats, err = syncWebLive(ctx, ar, rt, provider, session, maxConversations)
+		}
 		if err != nil {
 			return err
 		}
@@ -556,6 +566,94 @@ func syncWebSource(ctx context.Context, ar *archive.Archive, path, provider stri
 	default:
 		return archive.ImportStats{}, fmt.Errorf("unsupported web provider %q", provider)
 	}
+}
+
+func syncWebLive(ctx context.Context, ar *archive.Archive, rt runtime, provider string, session browser.SessionPlan, maxConversations int) (archive.ImportStats, error) {
+	spec, err := browser.Provider(provider)
+	if err != nil {
+		return archive.ImportStats{}, err
+	}
+	cdpSession, err := cdp.Open(ctx, cdp.Options{
+		Endpoint:       session.CDPURL,
+		HomeURL:        spec.HomeURL,
+		AllowedOrigins: spec.Origins,
+	})
+	if err != nil {
+		return archive.ImportStats{}, err
+	}
+	defer cdpSession.Close(1000, "")
+	var payload []byte
+	switch provider {
+	case chatgptweb.Provider:
+		payload, err = chatgptweb.FetchLive(ctx, chatGPTCDPFetcher{session: cdpSession}, chatgptweb.LiveOptions{MaxConversations: maxConversations})
+	case claudeweb.Provider:
+		payload, err = claudeweb.FetchLive(ctx, claudeCDPFetcher{session: cdpSession}, claudeweb.LiveOptions{MaxConversations: maxConversations})
+	default:
+		err = fmt.Errorf("unsupported web provider %q", provider)
+	}
+	if err != nil {
+		return archive.ImportStats{}, err
+	}
+	tempPath, cleanup, err := writeLiveSyncTemp(rt, provider, payload)
+	if err != nil {
+		return archive.ImportStats{}, err
+	}
+	defer cleanup()
+	return syncWebSource(ctx, ar, tempPath, provider)
+}
+
+type chatGPTCDPFetcher struct {
+	session *cdp.Session
+}
+
+func (f chatGPTCDPFetcher) Fetch(ctx context.Context, requestURL string) (chatgptweb.FetchResponse, error) {
+	resp, err := f.session.Fetch(ctx, requestURL)
+	if err != nil {
+		return chatgptweb.FetchResponse{}, err
+	}
+	return chatgptweb.FetchResponse{Status: resp.Status, URL: resp.URL, Body: resp.Body}, nil
+}
+
+type claudeCDPFetcher struct {
+	session *cdp.Session
+}
+
+func (f claudeCDPFetcher) Fetch(ctx context.Context, requestURL string) (claudeweb.FetchResponse, error) {
+	resp, err := f.session.Fetch(ctx, requestURL)
+	if err != nil {
+		return claudeweb.FetchResponse{}, err
+	}
+	return claudeweb.FetchResponse{Status: resp.Status, URL: resp.URL, Body: resp.Body}, nil
+}
+
+func writeLiveSyncTemp(rt runtime, provider string, payload []byte) (string, func(), error) {
+	dir := filepath.Join(rt.CacheDir, "live-sync")
+	if err := ensurePrivateDir(dir); err != nil {
+		return "", nil, err
+	}
+	file, err := os.CreateTemp(dir, provider+"-*.json")
+	if err != nil {
+		return "", nil, fmt.Errorf("create private live sync temp file: %w", err)
+	}
+	path := file.Name()
+	cleanup := func() {
+		_ = os.Remove(path)
+	}
+	if err := os.Chmod(path, 0o600); err != nil {
+		_ = file.Close()
+		cleanup()
+		return "", nil, fmt.Errorf("chmod live sync temp file: %w", err)
+	}
+	if _, err := file.Write(payload); err != nil {
+		_ = file.Close()
+		cleanup()
+		return "", nil, fmt.Errorf("write live sync temp file: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		cleanup()
+		return "", nil, fmt.Errorf("close live sync temp file: %w", err)
+	}
+	return path, cleanup, nil
 }
 
 func (a *App) webFreshness(ctx context.Context, rt runtime, sourceKind string) websync.Freshness {
@@ -933,12 +1031,16 @@ func controlCounts(counts archive.Counts) []control.Count {
 }
 
 func parseLimit(value string, fallback int) (int, error) {
+	return parsePositiveOption("limit", value, fallback)
+}
+
+func parsePositiveOption(name, value string, fallback int) (int, error) {
 	if value == "" {
 		return fallback, nil
 	}
 	limit, err := strconv.Atoi(value)
 	if err != nil || limit <= 0 {
-		return 0, fmt.Errorf("--limit must be a positive integer")
+		return 0, fmt.Errorf("--%s must be a positive integer", name)
 	}
 	return limit, nil
 }
