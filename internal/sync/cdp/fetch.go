@@ -12,6 +12,8 @@ import (
 	"nhooyr.io/websocket"
 )
 
+const defaultReadLimit = 50 * 1024 * 1024
+
 type Options struct {
 	Endpoint       string
 	HomeURL        string
@@ -95,6 +97,7 @@ func Open(ctx context.Context, opts Options) (*Session, error) {
 	if err != nil {
 		return nil, fmt.Errorf("connect CDP websocket: %w", err)
 	}
+	conn.SetReadLimit(defaultReadLimit)
 	return &Session{conn: conn, allowedOrigins: normalizedOrigins(opts.AllowedOrigins)}, nil
 }
 

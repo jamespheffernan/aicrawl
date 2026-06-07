@@ -4,6 +4,8 @@ Observed date: 2026-06-07
 
 The live Claude path uses an attached Chrome DevTools target for `https://claude.ai` and runs same-origin `fetch()` calls from that page context. Authentication stays in the browser profile.
 
+As of 2026-06-07, Claude list responses can exceed the default 32 KB websocket read limit even with small `limit` values, because each conversation item can carry substantial metadata. The shared CDP session must use an explicit larger read limit before dry-run list inspection and write sync can be considered equivalent field checks.
+
 ## Current Endpoint Assumptions
 
 Organization endpoint:
