@@ -111,6 +111,8 @@ Expected result:
 - Fixture re-imports report already-imported status.
 - Reconciliation reports missing and divergent counts without writing the archive.
 - Local transcript and captured web payload fixtures are searchable after import.
+- OpenClaw imports preserve redacted `sourceChannel` and sender metadata in structured conversation/message fields when present.
+- Directory imports and dry-runs skip control-only local transcript files with a redacted warning and cap warning arrays at 100 entries plus a truncation summary.
 - Directory dry-runs for local transcript providers report aggregate source counts without writing the archive or emitting private source paths.
 - `status --json` reports `web_sync` freshness for ChatGPT and Claude web source kinds, including `last_checked_at`, cursor metadata, and candidate counts when available.
 - Repeated live web syncs with unchanged provider update cursors return a successful no-change result instead of re-importing the same detail payload.

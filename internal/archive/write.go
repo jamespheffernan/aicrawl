@@ -47,6 +47,7 @@ func (a *Archive) ImportParsed(ctx context.Context, sourcePath string, parsed Pa
 		stats.Messages += len(conversation.Messages)
 		stats.Attachments += len(conversation.Attachments)
 	}
+	stats.Warnings = limitImportWarnings(stats.Warnings)
 	err = a.store.WithTx(ctx, func(tx *sql.Tx) error {
 		existing, ok, err := completedImportStats(ctx, tx, importID)
 		if err != nil {
@@ -166,6 +167,7 @@ func (a *Archive) ImportStream(ctx context.Context, sourcePath, provider, source
 		if err := parse(emit); err != nil {
 			return err
 		}
+		stats.Warnings = limitImportWarnings(stats.Warnings)
 		completedAt := timefmt.FormatUTC(time.Now())
 		stats.CompletedAt = completedAt
 		for i, warning := range stats.Warnings {

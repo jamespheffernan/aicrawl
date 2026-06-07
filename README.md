@@ -63,7 +63,7 @@ v0.1 supports local official export files, captured ChatGPT and Claude web conve
 - `aicrawl sync web --provider chatgpt|claude --dry-run` validates the browser-profile boundary, checks optional redacted browser network captures for list/detail conversation endpoints, reports captured payload counts, and reports archive freshness. When `--cdp-url` is supplied and a provider page is already open, dry-run also performs list-only same-origin browser fetches to count candidate conversations without fetching detail payloads or writing the archive.
 - `aicrawl reconcile <official-export> --provider chatgpt|claude|auto --json` compares a periodic official export against the local archive and reports missing conversation/message coverage plus divergent message projections without writing.
 - `aicrawl schedule launchd --provider chatgpt|claude [--cdp-url <url> | --profile <dir>]` writes a macOS LaunchAgent plist for recurring bounded web sync. It stores only command arguments, not browser credentials.
-- OpenClaw session JSONL with `session` and `message` events.
+- OpenClaw session JSONL with `session` and `message` events, including Discord/Telegram `sourceChannel` and sender metadata when OpenClaw records it.
 - Codex rollout JSONL with `session_meta` and `response_item` message events.
 - Gemini CLI session JSON with `sessionId` and `messages`.
 - Claude Code project JSONL with visible `user` and `assistant` message text. Control events, thinking blocks, tool calls, and tool results are skipped.

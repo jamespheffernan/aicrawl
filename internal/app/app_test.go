@@ -251,6 +251,9 @@ func TestImportDirectoryDryRunReportsLocalSourceCountsWithoutCreatingArchive(t *
 		filepath.Join("..", "..", "testdata", "redacted", "openclaw-session.fixture.jsonl"),
 		filepath.Join(sourceDir, "session.fixture.jsonl"),
 	)
+	if err := os.WriteFile(filepath.Join(sourceDir, "control-only.jsonl"), []byte(`{"type":"session","version":1,"id":"control-only","timestamp":"2025-10-09T08:53:20Z","cwd":"/private/workspace"}`+"\n"), 0o600); err != nil {
+		t.Fatalf("write control-only source: %v", err)
+	}
 	if err := os.WriteFile(filepath.Join(sourceDir, "ignored.txt"), []byte("ignored"), 0o600); err != nil {
 		t.Fatalf("write ignored file: %v", err)
 	}
@@ -265,11 +268,14 @@ func TestImportDirectoryDryRunReportsLocalSourceCountsWithoutCreatingArchive(t *
 	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
 		t.Fatalf("decode directory dry-run: %v", err)
 	}
-	if report.Provider != "openclaw" || report.SourceKind != "openclaw_jsonl" || report.Sources != 1 {
-		t.Fatalf("report identity = %+v, want one OpenClaw source", report)
+	if report.Provider != "openclaw" || report.SourceKind != "openclaw_jsonl" || report.Sources != 2 || report.SkippedSources != 1 {
+		t.Fatalf("report identity = %+v, want two OpenClaw sources with one skipped", report)
 	}
 	if report.Conversations != 1 || report.Messages == 0 {
 		t.Fatalf("report counts = %+v, want one conversation with messages", report)
+	}
+	if len(report.Warnings) != 1 || strings.Contains(report.Warnings[0], sourceDir) {
+		t.Fatalf("warnings = %+v, want one redacted skipped-source warning", report.Warnings)
 	}
 	stdout.Reset()
 
@@ -284,6 +290,97 @@ func TestImportDirectoryDryRunReportsLocalSourceCountsWithoutCreatingArchive(t *
 	}
 	if status.State != "uninitialized" {
 		t.Fatalf("status after directory dry-run = %q, want uninitialized", status.State)
+	}
+}
+
+func TestImportDirectorySkipsOpenClawSourcesWithoutVisibleMessages(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
+
+	sourceDir := filepath.Join(t.TempDir(), "openclaw-root", "sessions")
+	if err := os.MkdirAll(sourceDir, 0o700); err != nil {
+		t.Fatalf("create source dir: %v", err)
+	}
+	copyFixture(t,
+		filepath.Join("..", "..", "testdata", "redacted", "openclaw-session.fixture.jsonl"),
+		filepath.Join(sourceDir, "session.fixture.jsonl"),
+	)
+	if err := os.WriteFile(filepath.Join(sourceDir, "control-only.jsonl"), []byte(`{"type":"session","version":1,"id":"control-only","timestamp":"2025-10-09T08:53:20Z","cwd":"/private/workspace"}`+"\n"), 0o600); err != nil {
+		t.Fatalf("write control-only source: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	cli := New()
+	cli.stdout = &stdout
+	if err := cli.Run(context.Background(), []string{"import", filepath.Dir(sourceDir), "--provider", "openclaw", "--json"}); err != nil {
+		t.Fatalf("directory import: %v", err)
+	}
+	var stats importDirectoryStats
+	if err := json.Unmarshal(stdout.Bytes(), &stats); err != nil {
+		t.Fatalf("decode directory import: %v", err)
+	}
+	if stats.Provider != "openclaw" || stats.SourceKind != "openclaw_jsonl" || stats.Sources != 2 || stats.ImportedSources != 1 || stats.SkippedSources != 1 {
+		t.Fatalf("directory stats = %+v, want one imported and one skipped OpenClaw source", stats)
+	}
+	if stats.Conversations != 1 || stats.Messages == 0 {
+		t.Fatalf("directory counts = %+v, want one conversation with messages", stats)
+	}
+	if len(stats.Warnings) != 1 || strings.Contains(stats.Warnings[0], sourceDir) {
+		t.Fatalf("warnings = %+v, want one redacted skipped-source warning", stats.Warnings)
+	}
+	stdout.Reset()
+
+	if err := cli.Run(context.Background(), []string{"search", "openclaw jsonl fixture assistant phrase", "--provider", "openclaw", "--json"}); err != nil {
+		t.Fatalf("search directory import: %v", err)
+	}
+	var hits []archive.SearchHit
+	if err := json.Unmarshal(stdout.Bytes(), &hits); err != nil {
+		t.Fatalf("decode search hits: %v", err)
+	}
+	if len(hits) != 1 {
+		t.Fatalf("hits = %+v, want one OpenClaw hit", hits)
+	}
+}
+
+func TestImportDirectoryDryRunBoundsSkippedSourceWarnings(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
+
+	sourceDir := filepath.Join(t.TempDir(), "openclaw-root", "sessions")
+	if err := os.MkdirAll(sourceDir, 0o700); err != nil {
+		t.Fatalf("create source dir: %v", err)
+	}
+	for i := 0; i < 105; i++ {
+		data := fmt.Sprintf(`{"type":"session","version":1,"id":"control-only-%03d","timestamp":"2025-10-09T08:53:20Z","cwd":"/private/workspace"}`+"\n", i)
+		if err := os.WriteFile(filepath.Join(sourceDir, fmt.Sprintf("control-only-%03d.jsonl", i)), []byte(data), 0o600); err != nil {
+			t.Fatalf("write control-only source: %v", err)
+		}
+	}
+
+	var stdout bytes.Buffer
+	cli := New()
+	cli.stdout = &stdout
+	if err := cli.Run(context.Background(), []string{"import", filepath.Dir(sourceDir), "--provider", "openclaw", "--dry-run", "--json"}); err != nil {
+		t.Fatalf("directory dry-run: %v", err)
+	}
+	var report importDryRunReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode directory dry-run: %v", err)
+	}
+	if report.Sources != 105 || report.SkippedSources != 105 || report.Conversations != 0 || report.Messages != 0 {
+		t.Fatalf("report = %+v, want all sources skipped without importable messages", report)
+	}
+	if len(report.Warnings) != maxReportWarnings+1 {
+		t.Fatalf("warning count = %d, want bounded warnings plus truncation summary", len(report.Warnings))
+	}
+	if report.Warnings[len(report.Warnings)-1] != "truncated 5 additional warnings" {
+		t.Fatalf("last warning = %q, want truncation summary", report.Warnings[len(report.Warnings)-1])
 	}
 }
 

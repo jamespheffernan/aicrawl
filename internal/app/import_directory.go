@@ -18,6 +18,7 @@ type importDirectoryStats struct {
 	Sources                int      `json:"sources"`
 	ImportedSources        int      `json:"imported_sources"`
 	AlreadyImportedSources int      `json:"already_imported_sources"`
+	SkippedSources         int      `json:"skipped_sources,omitempty"`
 	Conversations          int      `json:"conversations"`
 	Messages               int      `json:"messages"`
 	Attachments            int      `json:"attachments"`
@@ -55,6 +56,11 @@ func inspectImportDirectory(root, provider string) (importDryRunReport, error) {
 	for i, path := range files {
 		fileReport, err := inspectImportFile(path, provider)
 		if err != nil {
+			if shouldSkipImportSourceError(err) {
+				report.SkippedSources++
+				report.Warnings = append(report.Warnings, skippedImportSourceWarning("inspect", i, len(files), err))
+				continue
+			}
 			return importDryRunReport{}, fmt.Errorf("inspect source %d of %d: %w", i+1, len(files), err)
 		}
 		report.Conversations += fileReport.Conversations
@@ -62,6 +68,7 @@ func inspectImportDirectory(root, provider string) (importDryRunReport, error) {
 		report.Attachments += fileReport.Attachments
 		report.Warnings = append(report.Warnings, fileReport.Warnings...)
 	}
+	report.Warnings = limitReportWarnings(report.Warnings)
 	return report, nil
 }
 
@@ -86,6 +93,11 @@ func importDirectory(ctx context.Context, ar *archive.Archive, root, provider st
 	for i, path := range files {
 		fileStats, err := importStream(ctx, ar, path, provider)
 		if err != nil {
+			if shouldSkipImportSourceError(err) {
+				stats.SkippedSources++
+				stats.Warnings = append(stats.Warnings, skippedImportSourceWarning("import", i, len(files), err))
+				continue
+			}
 			return importDirectoryStats{}, fmt.Errorf("import source %d of %d: %w", i+1, len(files), err)
 		}
 		stats.Conversations += fileStats.Conversations
@@ -98,7 +110,19 @@ func importDirectory(ctx context.Context, ar *archive.Archive, root, provider st
 			stats.ImportedSources++
 		}
 	}
+	stats.Warnings = limitReportWarnings(stats.Warnings)
 	return stats, nil
+}
+
+func shouldSkipImportSourceError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "contains no importable messages")
+}
+
+func skippedImportSourceWarning(action string, index, total int, err error) string {
+	return fmt.Sprintf("skipped %s source %d of %d: %s", action, index+1, total, err)
 }
 
 func discoverImportSourceFiles(root, provider string) ([]string, error) {

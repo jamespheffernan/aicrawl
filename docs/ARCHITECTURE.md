@@ -101,6 +101,8 @@ ChatGPT exports are treated as a graph. The importer stores every mapping node a
 
 Claude exports are parsed defensively. Unknown fields are tolerated and preserved in raw payloads. Missing or malformed optional metadata produces warnings where useful, while missing required stable IDs fail clearly.
 
+OpenClaw sessions are parsed as local transcript JSONL. When OpenClaw records a channel such as Discord or Telegram in `sourceChannel`, that origin is reflected in the conversation title. Sender labels, names, or usernames are stored in `messages.sender` when present, while the original event JSON remains preserved in `raw_payload`.
+
 ## Search Flow
 
 ```mermaid

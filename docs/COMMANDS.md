@@ -97,11 +97,11 @@ aicrawl import ~/.claude/projects --provider claude-code --json
 aicrawl import ./export.zip --provider auto
 ```
 
-Provider defaults to official Claude/ChatGPT export auto-detection when omitted or set to `auto`. Local agent transcript providers must be selected explicitly. Claude Code imports keep visible user/assistant text and skip control events, thinking blocks, tool calls, and tool results. Cursor imports open `store.db` read-only, use meta identity/title when available, order visible message blobs by SQLite `rowid`, and skip non-JSON blobs, tool calls, and tool results. Imports are idempotent by source kind, provider, and source hash. Text output includes a reminder that source files still contain private data.
+Provider defaults to official Claude/ChatGPT export auto-detection when omitted or set to `auto`. Local agent transcript providers must be selected explicitly. OpenClaw imports preserve visible message text and, when present, Discord/Telegram-style `sourceChannel` and sender metadata in conversation titles and message sender columns. Claude Code imports keep visible user/assistant text and skip control events, thinking blocks, tool calls, and tool results. Cursor imports open `store.db` read-only, use meta identity/title when available, order visible message blobs by SQLite `rowid`, and skip non-JSON blobs, tool calls, and tool results. Imports are idempotent by source kind, provider, and source hash. Text output includes a reminder that source files still contain private data.
 
 When `<path>` is a directory, `--provider` must be one of `openclaw`, `codex`, `gemini`, `claude-code`, or `cursor`. Directory import recursively discovers provider-shaped sources: OpenClaw/Codex/Claude Code `*.jsonl`, Gemini `*.json`, and Cursor `store.db`. JSON output is an aggregate report with source counts, imported/already-imported source counts, conversation/message/attachment totals, and parser warnings. It does not include full source paths or message text.
 
-With `--dry-run`, import parses the source and reports candidate counts without opening, creating, or writing the archive. JSON output includes provider, source kind, conversation count, message count, attachment count, and bounded parser warnings. It does not include message bodies or full source paths.
+With `--dry-run`, import parses the source and reports candidate counts without opening, creating, or writing the archive. JSON output includes provider, source kind, conversation count, message count, attachment count, skipped source count for directory imports, and parser warnings capped at 100 entries plus a truncation summary. It does not include message bodies or full source paths.
 
 ## `reconcile`
 

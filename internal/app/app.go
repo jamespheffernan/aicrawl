@@ -456,6 +456,7 @@ type importDryRunReport struct {
 	Provider        string   `json:"provider"`
 	SourceKind      string   `json:"source_kind"`
 	Sources         int      `json:"sources,omitempty"`
+	SkippedSources  int      `json:"skipped_sources,omitempty"`
 	Conversations   int      `json:"conversations"`
 	Messages        int      `json:"messages"`
 	Attachments     int      `json:"attachments"`
@@ -489,6 +490,7 @@ func inspectImportFile(path, provider string) (importDryRunReport, error) {
 	}
 	report.Provider = header.Provider
 	report.SourceKind = header.SourceKind
+	report.Warnings = limitReportWarnings(report.Warnings)
 	return report, nil
 }
 

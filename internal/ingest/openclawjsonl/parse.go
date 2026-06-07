@@ -42,9 +42,11 @@ func parseReader(r io.Reader, fallbackID string) (archive.Conversation, []string
 	rawID := strings.TrimSuffix(fallbackID, filepath.Ext(fallbackID))
 	title := "OpenClaw session " + rawID
 	var createdAt string
+	var sourceChannel string
 	var rawConversation json.RawMessage
 	var messages []archive.Message
 	warnings := []string{}
+	skippedNoText := 0
 	for ordinal := 0; ; ordinal++ {
 		line, err := reader.ReadBytes('\n')
 		if err != nil && len(line) == 0 {
@@ -77,15 +79,21 @@ func parseReader(r io.Reader, fallbackID string) (archive.Conversation, []string
 		if eventType != "message" {
 			continue
 		}
-		message, ok := parseMessage(object, rawID, ordinal, line)
+		message, channel, ok := parseMessage(object, rawID, ordinal, line)
 		if !ok {
-			warnings = append(warnings, "skipped OpenClaw message without visible text at line "+fmt.Sprint(ordinal+1))
+			skippedNoText++
 			continue
+		}
+		if sourceChannel == "" {
+			sourceChannel = channel
 		}
 		messages = append(messages, message)
 	}
 	if len(messages) == 0 {
 		return archive.Conversation{}, nil, fmt.Errorf("OpenClaw JSONL contains no importable messages")
+	}
+	if skippedNoText > 0 {
+		warnings = append(warnings, fmt.Sprintf("skipped %d OpenClaw messages without visible text", skippedNoText))
 	}
 	conversationID := Provider + ":" + rawID
 	for i := range messages {
@@ -96,6 +104,9 @@ func parseReader(r io.Reader, fallbackID string) (archive.Conversation, []string
 	}
 	if len(rawConversation) == 0 {
 		rawConversation = []byte(`{}`)
+	}
+	if sourceChannel != "" {
+		title = "OpenClaw " + displaySourceChannel(sourceChannel) + " session " + rawID
 	}
 	return archive.Conversation{
 		ID:         conversationID,
@@ -109,7 +120,7 @@ func parseReader(r io.Reader, fallbackID string) (archive.Conversation, []string
 	}, warnings, nil
 }
 
-func parseMessage(object map[string]json.RawMessage, sessionID string, ordinal int, raw json.RawMessage) (archive.Message, bool) {
+func parseMessage(object map[string]json.RawMessage, sessionID string, ordinal int, raw json.RawMessage) (archive.Message, string, bool) {
 	var messageObject map[string]json.RawMessage
 	if rawMessage, ok := object["message"]; ok {
 		_ = json.Unmarshal(rawMessage, &messageObject)
@@ -123,7 +134,7 @@ func parseMessage(object map[string]json.RawMessage, sessionID string, ordinal i
 		text = localtext.Text(rawContent)
 	}
 	if text == "" {
-		return archive.Message{}, false
+		return archive.Message{}, "", false
 	}
 	rawID := localtext.StringField(object, "id")
 	if rawID == "" {
@@ -137,20 +148,21 @@ func parseMessage(object map[string]json.RawMessage, sessionID string, ordinal i
 	if messageAt := localtext.TimeField(messageObject, "timestamp"); messageAt != "" {
 		createdAt = messageAt
 	}
+	sourceChannel := localtext.StringField(messageObject, "sourceChannel")
 	return archive.Message{
 		ID:            Provider + ":" + sessionID + ":" + rawID,
 		Provider:      Provider,
 		RawID:         rawID,
 		ParentID:      parentID,
 		Role:          normalizeRole(role),
-		Sender:        role,
+		Sender:        messageSender(messageObject, role),
 		CreatedAt:     createdAt,
 		Ordinal:       ordinal,
 		IsCurrentPath: true,
 		IsPathKnown:   false,
 		Text:          text,
 		RawPayload:    raw,
-	}, true
+	}, sourceChannel, true
 }
 
 func normalizeRole(role string) string {
@@ -159,5 +171,36 @@ func normalizeRole(role string) string {
 		return role
 	default:
 		return "unknown"
+	}
+}
+
+func messageSender(messageObject map[string]json.RawMessage, fallback string) string {
+	if senderLabel := localtext.StringField(messageObject, "senderLabel"); senderLabel != "" {
+		return senderLabel
+	}
+	name := localtext.StringField(messageObject, "senderName")
+	username := strings.TrimPrefix(localtext.StringField(messageObject, "senderUsername"), "@")
+	switch {
+	case name != "" && username != "":
+		return name + " (@" + username + ")"
+	case name != "":
+		return name
+	case username != "":
+		return "@" + username
+	case fallback != "":
+		return fallback
+	default:
+		return "unknown"
+	}
+}
+
+func displaySourceChannel(channel string) string {
+	switch strings.ToLower(strings.TrimSpace(channel)) {
+	case "discord":
+		return "Discord"
+	case "telegram":
+		return "Telegram"
+	default:
+		return strings.TrimSpace(channel)
 	}
 }

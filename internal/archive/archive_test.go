@@ -283,6 +283,54 @@ func TestImportStreamSkipsParserForCompletedImport(t *testing.T) {
 	}
 }
 
+func TestImportStreamBoundsStoredWarnings(t *testing.T) {
+	ctx := context.Background()
+	dbPath := t.TempDir() + "/archive.db"
+	ar, err := archive.Open(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("open archive: %v", err)
+	}
+	defer ar.Close()
+
+	sourcePath := filepath.Join(t.TempDir(), "source.fixture.json")
+	if err := writeTestSource(sourcePath); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+	conversation := archive.Conversation{
+		ID:         "chatgpt:warning-bound",
+		Provider:   "chatgpt",
+		RawID:      "warning-bound",
+		Title:      "Warning Bound",
+		RawPayload: []byte(`{"id":"warning-bound"}`),
+		Messages: []archive.Message{{
+			ID:             "chatgpt:warning-bound:msg",
+			Provider:       "chatgpt",
+			ConversationID: "chatgpt:warning-bound",
+			RawID:          "msg",
+			Role:           "user",
+			Ordinal:        0,
+			Text:           "warning bound fixture",
+			RawPayload:     []byte(`{"id":"msg"}`),
+		}},
+	}
+	warnings := make([]string, 105)
+	for i := range warnings {
+		warnings[i] = fmt.Sprintf("synthetic warning %03d", i)
+	}
+	stats, err := ar.ImportStream(ctx, sourcePath, "chatgpt", "chatgpt_export", func(emit archive.ConversationEmitter) error {
+		return emit(conversation, warnings)
+	})
+	if err != nil {
+		t.Fatalf("import stream: %v", err)
+	}
+	if len(stats.Warnings) != 101 {
+		t.Fatalf("warning count = %d, want bounded warnings plus truncation summary", len(stats.Warnings))
+	}
+	if stats.Warnings[len(stats.Warnings)-1] != "truncated 5 additional warnings" {
+		t.Fatalf("last warning = %q, want truncation summary", stats.Warnings[len(stats.Warnings)-1])
+	}
+}
+
 func TestAttachmentTextIsSearchableAcrossOverlappingImports(t *testing.T) {
 	ctx := context.Background()
 	dbPath := t.TempDir() + "/archive.db"

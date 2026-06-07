@@ -31,6 +31,7 @@ Official exports are too slow for keeping a private AI-chat database current, an
 ### Local Sources
 
 - R5. Import OpenClaw live and cold archived sessions from JSONL without mutating the OpenClaw session store.
+- R5a. Preserve OpenClaw channel and sender metadata for Discord/Telegram-origin sessions when the JSONL includes it.
 - R6. Import Codex rollout JSONL sessions from both current and archived Codex session roots.
 - R7. Import Gemini CLI JSON chat sessions with stable session and message ordering.
 - R8. Import Claude Code local history only after its JSONL shape is characterized with redacted fixtures.
@@ -166,6 +167,8 @@ Web sync should add a browser-orchestrated acquisition layer in front of the exi
 - **Patterns:** Stream JSONL where possible, preserve raw payloads, and warn without private text when records cannot be mapped.
 - **Test Scenarios:**
   - Each adapter imports one redacted fixture as ordered messages.
+  - OpenClaw fixtures preserve channel and sender metadata when present.
+  - Control-only or empty local transcript files are skipped with bounded redacted warnings during directory import.
   - Unknown records produce bounded warnings without logging private text.
   - Re-importing the same source does not duplicate conversations or messages.
   - Cursor fixtures are opened read-only.
