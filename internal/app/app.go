@@ -16,6 +16,7 @@ import (
 	"github.com/openclaw/aicrawl/internal/ingest/claudecodejsonl"
 	"github.com/openclaw/aicrawl/internal/ingest/claudeexport"
 	"github.com/openclaw/aicrawl/internal/ingest/codexjsonl"
+	"github.com/openclaw/aicrawl/internal/ingest/cursorstore"
 	"github.com/openclaw/aicrawl/internal/ingest/geminicli"
 	"github.com/openclaw/aicrawl/internal/ingest/openclawjsonl"
 	"github.com/openclaw/aicrawl/internal/sync/browser"
@@ -97,13 +98,13 @@ Usage:
   aicrawl doctor [--json]
   aicrawl metadata [--json]
   aicrawl status [--json]
-  aicrawl import <zip-json-or-jsonl> [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|auto]
+  aicrawl import <zip-json-or-jsonl-db> [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|cursor|auto]
   aicrawl sync web --provider chatgpt|claude [--source <json-or-zip>] [--profile <dir> | --cdp-url <url>] [--capture <network.json>] [--max-conversations 50] [--dry-run] [--json]
-  aicrawl conversations [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|all] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit 50]
+  aicrawl conversations [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|cursor|all] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit 50]
   aicrawl messages --conversation <id> [--path current|all] [--around <message-id>] [--context 5 | --before N --after N]
-  aicrawl search <query> [--group messages|conversations] [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|all] [--scope visible|transcript|attachments|internal|all] [--role user|assistant|system|developer|tool|attachment|unknown|all] [--path current|all] [--sort relevance|recent] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit 25]
+  aicrawl search <query> [--group messages|conversations] [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|cursor|all] [--scope visible|transcript|attachments|internal|all] [--role user|assistant|system|developer|tool|attachment|unknown|all] [--path current|all] [--sort relevance|recent] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit 25]
   aicrawl sql <readonly-sql> [--json]
-  aicrawl export markdown --out <dir> [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|all] [--conversation <id>] [--query <query>] [--scope visible|transcript|attachments|internal|all] [--role user|assistant|system|developer|tool|attachment|unknown|all] [--path current|all] [--sort relevance|recent] [--since YYYY-MM-DD] [--until YYYY-MM-DD]
+  aicrawl export markdown --out <dir> [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|cursor|all] [--conversation <id>] [--query <query>] [--scope visible|transcript|attachments|internal|all] [--role user|assistant|system|developer|tool|attachment|unknown|all] [--path current|all] [--sort relevance|recent] [--since YYYY-MM-DD] [--until YYYY-MM-DD]
   aicrawl crawlbar manifest [--out ~/.crawlbar/apps/aicrawl.json]
 
 Global options:
@@ -330,7 +331,7 @@ func (a *App) importSource(ctx context.Context, globals globalOptions, args []st
 		return withExitCode(2, err)
 	}
 	if len(parsed.positionals) != 1 {
-		return withExitCode(2, fmt.Errorf("import requires exactly one ZIP, JSON, or JSONL path"))
+		return withExitCode(2, fmt.Errorf("import requires exactly one ZIP, JSON, JSONL, or DB path"))
 	}
 	provider, err := importProvider(parsed.values["provider"])
 	if err != nil {
@@ -383,6 +384,11 @@ func importStream(ctx context.Context, ar *archive.Archive, path, provider strin
 	case "claude-code":
 		return ar.ImportStream(ctx, path, claudecodejsonl.Provider, claudecodejsonl.SourceKind, func(emit archive.ConversationEmitter) error {
 			_, err := claudecodejsonl.StreamFile(path, emit)
+			return err
+		})
+	case "cursor":
+		return ar.ImportStream(ctx, path, cursorstore.Provider, cursorstore.SourceKind, func(emit archive.ConversationEmitter) error {
+			_, err := cursorstore.StreamFile(path, emit)
 			return err
 		})
 	case "gemini":
@@ -1190,10 +1196,10 @@ func providerOrAll(value string) (string, error) {
 		return "all", nil
 	}
 	switch value {
-	case "all", "claude", "chatgpt", "openclaw", "codex", "gemini", "claude-code":
+	case "all", "claude", "chatgpt", "openclaw", "codex", "gemini", "claude-code", "cursor":
 		return value, nil
 	default:
-		return "", fmt.Errorf("--provider must be claude, chatgpt, openclaw, codex, gemini, claude-code, or all")
+		return "", fmt.Errorf("--provider must be claude, chatgpt, openclaw, codex, gemini, claude-code, cursor, or all")
 	}
 }
 
@@ -1202,10 +1208,10 @@ func importProvider(value string) (string, error) {
 		return "auto", nil
 	}
 	switch value {
-	case "auto", "claude", "chatgpt", "openclaw", "codex", "gemini", "claude-code":
+	case "auto", "claude", "chatgpt", "openclaw", "codex", "gemini", "claude-code", "cursor":
 		return value, nil
 	default:
-		return "", fmt.Errorf("--provider must be claude, chatgpt, openclaw, codex, gemini, claude-code, or auto")
+		return "", fmt.Errorf("--provider must be claude, chatgpt, openclaw, codex, gemini, claude-code, cursor, or auto")
 	}
 }
 

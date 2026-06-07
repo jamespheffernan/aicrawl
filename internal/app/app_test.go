@@ -3,6 +3,8 @@ package app
 import (
 	"bytes"
 	"context"
+	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -14,6 +16,7 @@ import (
 
 	"github.com/openclaw/aicrawl/internal/archive"
 	"github.com/openclaw/aicrawl/internal/schema"
+	_ "modernc.org/sqlite"
 	"nhooyr.io/websocket"
 )
 
@@ -537,6 +540,43 @@ func TestImportLocalTranscriptSourcesAreSearchable(t *testing.T) {
 	}
 }
 
+func TestImportCursorStoreSourceIsSearchable(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
+
+	storePath := filepath.Join(t.TempDir(), "workspace", "cursor-fixture-session", "store.db")
+	writeCursorStoreFixture(t, storePath)
+
+	var stdout bytes.Buffer
+	cli := New()
+	cli.stdout = &stdout
+	if err := cli.Run(context.Background(), []string{"import", storePath, "--provider", "cursor", "--json"}); err != nil {
+		t.Fatalf("import cursor store fixture: %v", err)
+	}
+	var stats archive.ImportStats
+	if err := json.Unmarshal(stdout.Bytes(), &stats); err != nil {
+		t.Fatalf("decode import stats: %v", err)
+	}
+	if stats.Provider != "cursor" || stats.SourceKind != "cursor_store" || stats.Conversations != 1 || stats.Messages != 2 {
+		t.Fatalf("stats = %+v, want one cursor conversation with two visible messages", stats)
+	}
+	stdout.Reset()
+
+	if err := cli.Run(context.Background(), []string{"search", "cursor store app fixture assistant phrase", "--provider", "cursor", "--json"}); err != nil {
+		t.Fatalf("search cursor fixture: %v", err)
+	}
+	var hits []archive.SearchHit
+	if err := json.Unmarshal(stdout.Bytes(), &hits); err != nil {
+		t.Fatalf("decode search hits: %v", err)
+	}
+	if len(hits) != 1 || hits[0].Provider != "cursor" {
+		t.Fatalf("hits = %+v, want one cursor hit", hits)
+	}
+}
+
 func TestSyncWebLiveCDPImportsSearchableChatGPTPayload(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -661,6 +701,39 @@ func newFakeChatGPTCDPServer(t *testing.T) *httptest.Server {
 	}))
 	wsURL = "ws" + strings.TrimPrefix(server.URL, "http") + "/devtools/page/1"
 	return server
+}
+
+func writeCursorStoreFixture(t *testing.T, path string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatalf("create cursor fixture dir: %v", err)
+	}
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("open cursor fixture db: %v", err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`create table blobs (id text primary key, data blob); create table meta (key text primary key, value text);`); err != nil {
+		t.Fatalf("create cursor fixture schema: %v", err)
+	}
+	meta := `{"agentId":"cursor-fixture-session","createdAt":"2026-06-07T10:00:00Z","name":"Cursor app fixture"}`
+	if _, err := db.Exec(`insert into meta(key, value) values('0', ?)`, hex.EncodeToString([]byte(meta))); err != nil {
+		t.Fatalf("insert cursor fixture meta: %v", err)
+	}
+	rows := []struct {
+		id   string
+		data []byte
+	}{
+		{"binary-index", []byte{0x00, 0x01, 0x02}},
+		{"user-1", []byte(`{"role":"user","content":"cursor store app fixture user phrase","id":"user-1"}`)},
+		{"assistant-1", []byte(`{"role":"assistant","content":[{"type":"text","text":"cursor store app fixture assistant phrase"},{"type":"tool-call","input":{"command":"ignored"}}],"id":"assistant-1"}`)},
+		{"tool-1", []byte(`{"role":"tool","content":[{"type":"tool-result","content":"private tool output that should not be indexed"}],"id":"tool-1"}`)},
+	}
+	for _, row := range rows {
+		if _, err := db.Exec(`insert into blobs(id, data) values(?, ?)`, row.id, row.data); err != nil {
+			t.Fatalf("insert cursor fixture blob: %v", err)
+		}
+	}
 }
 
 func writeLargeChatGPTFixture(t *testing.T, path string, conversations int) {

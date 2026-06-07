@@ -4,6 +4,7 @@ go 1.26.2
 
 require (
 	github.com/openclaw/crawlkit v0.11.0
+	modernc.org/sqlite v1.50.1
 	nhooyr.io/websocket v1.8.17
 )
 
@@ -18,5 +19,4 @@ require (
 	modernc.org/libc v1.72.3 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
-	modernc.org/sqlite v1.50.1 // indirect
 )

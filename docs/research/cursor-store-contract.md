@@ -22,14 +22,16 @@ Some `blobs.data` values are valid JSON objects with message-like keys:
 
 Other blob values are non-JSON binary/index payloads. JSON message blobs include roles such as `user`, `system`, `assistant`, and `tool`, with `content` represented as text or arrays.
 
-## Import Gate
+## Import Contract
 
-Cursor ingestion is not enabled yet because a safe importer needs a deterministic way to reconstruct:
+The `cursor` importer opens one `store.db` read-only and treats it as one conversation.
 
-- conversation/session identity
-- message ordering
-- parent/branch relationships, if present
-- which blobs are visible transcript text versus tool/internal payloads
-- stable title and timestamps
+- Conversation identity, title, and created time are read from hex-encoded `meta.value` at key `0` when present.
+- If metadata cannot be decoded, the parent directory name is used as the session ID fallback.
+- Importable message rows are JSON `blobs.data` values with `role` and non-empty visible text.
+- Message order uses SQLite `rowid`, which reflects store insertion order in the observed table shape.
+- Supported visible roles are `user`, `assistant`, and `system`.
+- Content arrays keep only blocks with `type: "text"`.
+- Non-JSON blobs, `tool` rows, tool-call blocks, and tool-result blocks are skipped to avoid indexing internal command payloads as chat text.
 
-Until that contract is understood, adding a parser would risk importing unordered fragments or indexing private tool payloads as ordinary chat text.
+Cursor stores do not expose branch/path metadata through the observed message blobs, so imported Cursor messages have path membership marked unknown.

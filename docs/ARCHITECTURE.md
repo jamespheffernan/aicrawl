@@ -1,12 +1,12 @@
 # Architecture
 
-`aicrawl` is a local-first archive for AI conversation data. The v0.1 product is a CLI that imports local official export ZIP/JSON files, captured web conversation detail payloads, and selected local agent session files into SQLite, preserves the original JSON payloads, builds a normalized text index, and exposes read-only retrieval, search, SQL, Markdown export, and CrawlBar metadata.
+`aicrawl` is a local-first archive for AI conversation data. The v0.1 product is a CLI that imports local official export ZIP/JSON files, captured/live web conversation detail payloads, selected local agent session files, and Cursor chat stores into SQLite, preserves the original JSON payloads, builds a normalized text index, and exposes read-only retrieval, search, SQL, Markdown export, and CrawlBar metadata.
 
 ## User Workflow
 
-1. Collect an official export, captured web payload, or local session file in a private local directory.
+1. Collect an official export, captured web payload, local session file, or Cursor `store.db` in a private local directory.
 2. Run `aicrawl init` to create a private config and SQLite archive.
-3. Run `aicrawl import <path> --provider claude|chatgpt|openclaw|codex|gemini|claude-code|auto`.
+3. Run `aicrawl import <path> --provider claude|chatgpt|openclaw|codex|gemini|claude-code|cursor|auto`.
 4. Use `conversations`, `messages`, `search`, `sql`, or `export markdown` against the local archive.
 5. Optionally run `aicrawl crawlbar manifest` so CrawlBar can discover the local control surface.
 
@@ -28,6 +28,7 @@ internal/ingest/
   codexjsonl/             Codex rollout JSONL parser
   geminicli/              Gemini CLI session JSON parser
   claudecodejsonl/        Claude Code project JSONL parser
+  cursorstore/            Cursor store.db SQLite parser
   localtext/              shared local transcript text/timestamp helpers
 internal/sync/
   browser/                browser-profile and CDP preflight for web sync
@@ -47,7 +48,7 @@ Provider-specific parsing stays under `internal/ingest/*`. Reusable local archiv
 
 ```mermaid
 flowchart LR
-  User["Export ZIP/JSON or local session file"] --> Source["source reader"]
+  User["Export ZIP/JSON, local session file, or Cursor store.db"] --> Source["source reader"]
   Source --> Detect["Provider selection or official export auto-detect"]
   Detect --> Parser["internal/ingest provider parser"]
   Parser --> Canonical["Canonical conversations, messages, edges, attachments"]

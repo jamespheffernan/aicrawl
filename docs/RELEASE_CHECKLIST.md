@@ -81,6 +81,8 @@ Optional live-browser smoke, only when a logged-in provider browser is already r
 "$BIN" sync web --provider chatgpt --cdp-url http://127.0.0.1:9222 --max-conversations 1 --json
 ```
 
+Cursor import coverage is exercised by generated SQLite fixtures in the Go test suite rather than a checked-in binary `store.db` fixture.
+
 Expected result:
 
 - JSON commands emit valid JSON.
