@@ -1401,6 +1401,79 @@ func TestScheduleLaunchdWritesChatGPTAppCacheArgument(t *testing.T) {
 	}
 }
 
+func TestScheduleLaunchdWritesImportPlist(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
+
+	outPath := filepath.Join(home, "LaunchAgents", "aicrawl-codex.plist")
+	importPath := filepath.Join(home, ".codex", "sessions")
+	var stdout bytes.Buffer
+	cli := New()
+	cli.stdout = &stdout
+	if err := cli.Run(context.Background(), []string{
+		"schedule", "launchd",
+		"--provider", "codex",
+		"--import-path", importPath,
+		"--interval-minutes", "5",
+		"--aicrawl-bin", "/usr/local/bin/aicrawl",
+		"--out", outPath,
+		"--json",
+	}); err != nil {
+		t.Fatalf("schedule launchd import: %v", err)
+	}
+	var result launchdResult
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("decode launchd import result: %v", err)
+	}
+	if result.Mode != "import" || result.Provider != "codex" || result.ImportPath != importPath || result.IntervalSeconds != 300 {
+		t.Fatalf("result = %+v", result)
+	}
+	data, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("read plist: %v", err)
+	}
+	plist := string(data)
+	for _, want := range []string{
+		"<string>/usr/local/bin/aicrawl</string>",
+		"<string>import</string>",
+		"<string>" + importPath + "</string>",
+		"<string>--provider</string>",
+		"<string>codex</string>",
+		"<string>--json</string>",
+		"<integer>300</integer>",
+	} {
+		if !strings.Contains(plist, want) {
+			t.Fatalf("plist missing %q:\n%s", want, plist)
+		}
+	}
+	for _, forbidden := range []string{"sync", "web", "--cdp-url", "--profile", "token", "Authorization"} {
+		if strings.Contains(plist, forbidden) {
+			t.Fatalf("import plist contains forbidden %q:\n%s", forbidden, plist)
+		}
+	}
+}
+
+func TestScheduleLaunchdImportRejectsWebOptions(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	var stderr bytes.Buffer
+	cli := New()
+	cli.stderr = &stderr
+	err := cli.Run(context.Background(), []string{
+		"schedule", "launchd",
+		"--provider", "codex",
+		"--import-path", filepath.Join(home, ".codex", "sessions"),
+		"--cdp-url", "http://127.0.0.1:9222",
+	})
+	if err == nil || !strings.Contains(err.Error(), "--import-path cannot be combined") {
+		t.Fatalf("error = %v, want import/web option rejection", err)
+	}
+}
+
 func TestSyncWebLiveCDPImportsSearchableChatGPTPayload(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

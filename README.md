@@ -44,6 +44,7 @@ aicrawl sql "select count(*) from messages"
 aicrawl export markdown --out ./exported-md
 aicrawl export markdown --conversation <conversation-id> --out ./conversation-md
 aicrawl schedule launchd --provider chatgpt --profile ~/.cache/aicrawl/browser-profiles/chatgpt --interval-minutes 15
+aicrawl schedule launchd --provider codex --import-path ~/.codex/sessions --interval-minutes 5
 aicrawl crawlbar manifest
 ```
 
@@ -68,7 +69,7 @@ v0.1 supports local official export files, captured ChatGPT and Claude web conve
 - `aicrawl sync web --provider chatgpt|claude --source <json-or-zip>` imports captured provider conversation detail payloads under the same source kinds.
 - `aicrawl sync web --provider chatgpt|claude --dry-run` validates the browser-profile boundary, checks optional redacted browser network captures for list/detail conversation endpoints, reports captured payload counts, and reports archive freshness. When `--cdp-url` is supplied and a provider page is already open, dry-run also performs list-only same-origin browser fetches to count candidate conversations without fetching detail payloads or writing the archive.
 - `aicrawl reconcile <official-export> --provider chatgpt|claude|auto --json` compares a periodic official export against the local archive and reports missing conversation/message coverage plus divergent message projections without writing.
-- `aicrawl schedule launchd --provider chatgpt|claude [--cdp-url <url> | --profile <dir>] [--chatgpt-app-cache <dir>]` writes a macOS LaunchAgent plist for recurring bounded web sync. It stores only command arguments, not browser credentials.
+- `aicrawl schedule launchd --provider chatgpt|claude [--cdp-url <url> | --profile <dir>] [--chatgpt-app-cache <dir>]` writes a macOS LaunchAgent plist for recurring bounded web sync. `aicrawl schedule launchd --provider codex|openclaw|gemini|claude-code|cursor|hermes --import-path <path>` writes a recurring local-import LaunchAgent for transcript roots such as `~/.codex/sessions`, `~/.claude/projects`, `~/Library/Application Support/Claude`, `~/.gemini`, Cursor app support, or `~/.hermes`. It stores only command arguments, not browser credentials.
 - OpenClaw session JSONL with `session` and `message` events, including Discord/Telegram `sourceChannel` and sender metadata when OpenClaw records it.
 - Codex rollout JSONL with `session_meta` and `response_item` message events.
 - Gemini CLI session JSON with `sessionId` and `messages`.

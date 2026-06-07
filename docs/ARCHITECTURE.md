@@ -10,7 +10,7 @@
 4. Use `aicrawl sync web --provider chatgpt|claude --cdp-url <url>` for frequent recent web conversation capture, and optionally add `--chatgpt-app-cache "$HOME/Library/Application Support/com.openai.chat"` for ChatGPT native app cache ID coverage.
 5. Periodically run `aicrawl reconcile <official-export> --provider chatgpt|claude|auto` to compare official exports against the archive and identify any backfill needed.
 6. Use `conversations`, `messages`, `search`, `sql`, or `export markdown` against the local archive.
-7. Optionally run `aicrawl schedule launchd ...` to create a recurring macOS web-sync LaunchAgent.
+7. Optionally run `aicrawl schedule launchd ...` to create recurring macOS LaunchAgents for web sync or local transcript-root imports.
 8. Optionally run `aicrawl crawlbar manifest` so CrawlBar can discover the local control surface.
 
 For web payloads, run `aicrawl sync web --provider chatgpt|claude --cdp-url <url>` against an already authenticated browser target, add `--chatgpt-app-cache <dir>` to seed ChatGPT detail fetches from native macOS app cache conversation filenames, or pass `--source <json-or-zip>` for captured detail payloads. Dry-run mode reports auth state, contract state, source counts, and freshness without writing.
@@ -90,6 +90,8 @@ Live CDP fetches do not copy cookies, bearer tokens, session headers, or browser
 Live list and organization calls must return successful provider responses. Individual conversation detail calls that return 403, 404, or 410 are skipped so deleted, archived, or inaccessible conversations do not block importing the rest of the batch. Those skipped detail observations are recorded in `conversation_sync_status` as `inaccessible`; successful imported conversations are recorded as `seen`. Neither path triggers destructive archive deletion.
 
 `schedule launchd` writes a macOS LaunchAgent plist that periodically invokes bounded `sync web` with either a configured CDP URL or a dedicated profile path. It does not load the agent or automate provider login.
+
+For local transcript roots, `schedule launchd --import-path <path> --provider <provider>` writes a LaunchAgent that periodically runs `aicrawl import <path> --provider <provider> --json`. This gives OpenClaw, Codex, Gemini, Claude Code/Claude desktop local-agent, Cursor, and Hermes roots the same keep-current operating path as browser sync while relying on archive import idempotency to avoid duplicate rows.
 
 The network discovery parser consumes structured JSON captures, walks nested request objects, and emits only sanitized origins and paths. Query strings, fragments, headers, cookies, and authorization values are not included in the report. Non-dry-run sync with a non-matched capture fails before archive writes with a stable `contract_<state>` error such as `contract_stale`.
 

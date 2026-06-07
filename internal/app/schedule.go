@@ -12,14 +12,16 @@ import (
 type launchdResult struct {
 	Path                string   `json:"path"`
 	Label               string   `json:"label"`
+	Mode                string   `json:"mode"`
 	Provider            string   `json:"provider"`
+	ImportPath          string   `json:"import_path,omitempty"`
 	CDPURL              string   `json:"cdp_url,omitempty"`
 	ProfilePath         string   `json:"profile_path,omitempty"`
 	BrowserPath         string   `json:"browser_path,omitempty"`
 	RemoteDebuggingPort int      `json:"remote_debugging_port,omitempty"`
 	ChatGPTAppCachePath string   `json:"chatgpt_app_cache_path,omitempty"`
 	IntervalSeconds     int      `json:"interval_seconds"`
-	MaxConversations    int      `json:"max_conversations"`
+	MaxConversations    int      `json:"max_conversations,omitempty"`
 	ProgramArguments    []string `json:"program_arguments"`
 	NextSteps           []string `json:"next_steps"`
 }
@@ -32,13 +34,74 @@ func (a *App) schedule(ctx context.Context, globals globalOptions, args []string
 }
 
 func (a *App) scheduleLaunchd(ctx context.Context, globals globalOptions, args []string) error {
-	parsed, err := parseOptions(args, boolSet("json"), valueSet("provider", "cdp-url", "profile", "browser", "remote-debugging-port", "chatgpt-app-cache", "interval-minutes", "max-conversations", "out", "aicrawl-bin", "label"))
+	parsed, err := parseOptions(args, boolSet("json"), valueSet("provider", "import-path", "cdp-url", "profile", "browser", "remote-debugging-port", "chatgpt-app-cache", "interval-minutes", "max-conversations", "out", "aicrawl-bin", "label"))
 	if err != nil {
 		return withExitCode(2, err)
 	}
 	if len(parsed.positionals) != 0 {
 		return withExitCode(2, fmt.Errorf("schedule launchd does not accept positional arguments"))
 	}
+	if strings.TrimSpace(parsed.values["import-path"]) != "" {
+		return a.scheduleLaunchdImport(ctx, globals, parsed)
+	}
+	return a.scheduleLaunchdWeb(ctx, globals, parsed)
+}
+
+func (a *App) scheduleLaunchdImport(ctx context.Context, globals globalOptions, parsed parsedOptions) error {
+	if parsed.values["cdp-url"] != "" || parsed.values["profile"] != "" || parsed.values["browser"] != "" || parsed.values["remote-debugging-port"] != "" || parsed.values["chatgpt-app-cache"] != "" || parsed.values["max-conversations"] != "" {
+		return withExitCode(2, fmt.Errorf("--import-path cannot be combined with web-sync options"))
+	}
+	provider, err := importProvider(parsed.values["provider"])
+	if err != nil {
+		return withExitCode(2, err)
+	}
+	if provider == "auto" {
+		return withExitCode(2, fmt.Errorf("--provider is required with --import-path and cannot be auto"))
+	}
+	importPath := expandPath(strings.TrimSpace(parsed.values["import-path"]))
+	intervalMinutes, err := parsePositiveOption("interval-minutes", parsed.values["interval-minutes"], 15)
+	if err != nil {
+		return withExitCode(2, err)
+	}
+	binPath := scheduleBinaryPath(parsed)
+	label := strings.TrimSpace(parsed.values["label"])
+	if label == "" {
+		label = "com.openclaw.aicrawl.import." + provider
+	}
+	outPath := scheduleOutputPath(parsed, label)
+	programArgs := []string{binPath}
+	if globals.configPath != "" {
+		programArgs = append(programArgs, "--config", expandPath(globals.configPath))
+	}
+	programArgs = append(programArgs,
+		"import", importPath,
+		"--provider", provider,
+		"--json",
+	)
+	result := launchdResult{
+		Path:             outPath,
+		Label:            label,
+		Mode:             "import",
+		Provider:         provider,
+		ImportPath:       importPath,
+		IntervalSeconds:  intervalMinutes * 60,
+		ProgramArguments: append([]string(nil), programArgs...),
+		NextSteps:        []string{"Load the LaunchAgent with launchctl when you are ready.", "Recurring imports are idempotent by source kind, provider, and source hash."},
+	}
+	if err := writeLaunchAgent(outPath, label, programArgs, result.IntervalSeconds); err != nil {
+		return err
+	}
+	_ = ctx
+	if globals.format == "json" || parsed.bools["json"] {
+		return writeJSON(a.stdout, result)
+	}
+	if err := writeTextLine(a.stdout, "wrote LaunchAgent to %s", outPath); err != nil {
+		return err
+	}
+	return writeTextLine(a.stdout, "load with: launchctl bootstrap gui/$(id -u) %s", outPath)
+}
+
+func (a *App) scheduleLaunchdWeb(ctx context.Context, globals globalOptions, parsed parsedOptions) error {
 	provider, err := webProvider(parsed.values["provider"])
 	if err != nil {
 		return withExitCode(2, err)
@@ -78,26 +141,12 @@ func (a *App) scheduleLaunchd(ctx context.Context, globals globalOptions, args [
 		}
 		profilePath = filepath.Join(rt.CacheDir, "browser-profiles", provider)
 	}
-	binPath := strings.TrimSpace(parsed.values["aicrawl-bin"])
-	if binPath == "" {
-		if executable, err := os.Executable(); err == nil && executable != "" {
-			binPath = executable
-		} else {
-			binPath = "aicrawl"
-		}
-	} else {
-		binPath = expandPath(binPath)
-	}
+	binPath := scheduleBinaryPath(parsed)
 	label := strings.TrimSpace(parsed.values["label"])
 	if label == "" {
 		label = "com.openclaw.aicrawl.sync." + provider
 	}
-	outPath := strings.TrimSpace(parsed.values["out"])
-	if outPath == "" {
-		outPath = defaultLaunchAgentPath(label)
-	} else {
-		outPath = expandPath(outPath)
-	}
+	outPath := scheduleOutputPath(parsed, label)
 	programArgs := []string{binPath}
 	if globals.configPath != "" {
 		programArgs = append(programArgs, "--config", expandPath(globals.configPath))
@@ -134,6 +183,7 @@ func (a *App) scheduleLaunchd(ctx context.Context, globals globalOptions, args [
 	result := launchdResult{
 		Path:                outPath,
 		Label:               label,
+		Mode:                "sync_web",
 		Provider:            provider,
 		CDPURL:              cdpURL,
 		ProfilePath:         profilePath,
@@ -156,6 +206,25 @@ func (a *App) scheduleLaunchd(ctx context.Context, globals globalOptions, args [
 		return err
 	}
 	return writeTextLine(a.stdout, "load with: launchctl bootstrap gui/$(id -u) %s", outPath)
+}
+
+func scheduleBinaryPath(parsed parsedOptions) string {
+	binPath := strings.TrimSpace(parsed.values["aicrawl-bin"])
+	if binPath == "" {
+		if executable, err := os.Executable(); err == nil && executable != "" {
+			return executable
+		}
+		return "aicrawl"
+	}
+	return expandPath(binPath)
+}
+
+func scheduleOutputPath(parsed parsedOptions, label string) string {
+	outPath := strings.TrimSpace(parsed.values["out"])
+	if outPath == "" {
+		return defaultLaunchAgentPath(label)
+	}
+	return expandPath(outPath)
 }
 
 func defaultLaunchAgentPath(label string) string {

@@ -15,6 +15,7 @@ Usage:
   aicrawl reconcile <official-export-zip-or-json> [--provider claude|chatgpt|auto] [--json]
   aicrawl sync web --provider chatgpt|claude [--source <json-or-zip>] [--profile <dir> | --cdp-url <url>] [--browser <path>] [--remote-debugging-port 0] [--capture <network.json>] [--chatgpt-app-cache <dir>] [--max-conversations 50] [--dry-run] [--json]
   aicrawl schedule launchd --provider chatgpt|claude [--cdp-url <url> | --profile <dir>] [--browser <path>] [--remote-debugging-port 0] [--chatgpt-app-cache <dir>] [--interval-minutes 15] [--max-conversations 50] [--out <plist>] [--json]
+  aicrawl schedule launchd --provider openclaw|codex|gemini|claude-code|cursor|hermes --import-path <path> [--interval-minutes 15] [--out <plist>] [--json]
   aicrawl conversations [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|cursor|hermes|all] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit 50]
   aicrawl messages --conversation <id> [--path current|all] [--around <message-id>] [--context 5 | --before N --after N]
   aicrawl search <query> [--group messages|conversations] [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|cursor|hermes|all] [--scope visible|transcript|attachments|internal|all] [--role user|assistant|system|developer|tool|attachment|unknown|all] [--path current|all] [--sort relevance|recent] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit 25]
@@ -168,6 +169,8 @@ aicrawl schedule launchd --provider chatgpt --cdp-url http://127.0.0.1:9222 --in
 aicrawl schedule launchd --provider chatgpt --cdp-url http://127.0.0.1:9222 --chatgpt-app-cache "$HOME/Library/Application Support/com.openai.chat" --interval-minutes 15
 aicrawl schedule launchd --provider chatgpt --profile ~/.cache/aicrawl/browser-profiles/chatgpt --interval-minutes 15
 aicrawl schedule launchd --provider claude --cdp-url http://127.0.0.1:9222 --max-conversations 25 --out ~/Library/LaunchAgents/com.openclaw.aicrawl.sync.claude.plist --json
+aicrawl schedule launchd --provider codex --import-path ~/.codex/sessions --interval-minutes 5
+aicrawl schedule launchd --provider claude-code --import-path "$HOME/Library/Application Support/Claude" --interval-minutes 5
 ```
 
 The generated plist runs one of these shapes:
@@ -175,9 +178,14 @@ The generated plist runs one of these shapes:
 ```bash
 aicrawl sync web --provider <provider> --cdp-url <url> --max-conversations <n> --json
 aicrawl sync web --provider <provider> --profile <dir> --max-conversations <n> --json
+aicrawl import <path> --provider <provider> --json
 ```
 
-For ChatGPT, the generated plist can include `--chatgpt-app-cache <dir>` so recurring sync discovers native macOS app cache conversation IDs before fetching details through the authenticated web page. It stores the CDP URL or profile path and normal command arguments, but no cookies, bearer tokens, session headers, or browser storage. For `--profile`, the first run may open the browser and require a normal interactive login. Then load the plist when ready:
+For ChatGPT, the generated web-sync plist can include `--chatgpt-app-cache <dir>` so recurring sync discovers native macOS app cache conversation IDs before fetching details through the authenticated web page. It stores the CDP URL or profile path and normal command arguments, but no cookies, bearer tokens, session headers, or browser storage. For `--profile`, the first run may open the browser and require a normal interactive login.
+
+With `--import-path`, the generated plist runs recurring local imports for explicit providers such as `openclaw`, `codex`, `gemini`, `claude-code`, `cursor`, or `hermes`. Re-imports are idempotent by source kind, provider, and source hash, so frequent runs import new or changed local transcript files without duplicating older rows. `--import-path` cannot be combined with web-sync options such as `--cdp-url`, `--profile`, `--browser`, `--chatgpt-app-cache`, or `--max-conversations`.
+
+Then load the plist when ready:
 
 ```bash
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.openclaw.aicrawl.sync.chatgpt.plist
