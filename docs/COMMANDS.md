@@ -3,7 +3,7 @@
 This reference matches the `aicrawl --help` command surface for v0.1.
 
 ```text
-aicrawl archives official Claude and ChatGPT conversation exports locally.
+aicrawl archives AI conversation sources locally.
 
 Usage:
   aicrawl version
@@ -11,13 +11,13 @@ Usage:
   aicrawl doctor [--json]
   aicrawl metadata [--json]
   aicrawl status [--json]
-  aicrawl import <zip-or-json> [--provider claude|chatgpt|auto]
+  aicrawl import <zip-json-or-jsonl> [--provider claude|chatgpt|openclaw|codex|gemini|auto]
   aicrawl sync web --provider chatgpt|claude [--source <json-or-zip>] [--profile <dir> | --cdp-url <url>] [--capture <network.json>] [--dry-run] [--json]
-  aicrawl conversations [--provider claude|chatgpt|all] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit 50]
+  aicrawl conversations [--provider claude|chatgpt|openclaw|codex|gemini|all] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit 50]
   aicrawl messages --conversation <id> [--path current|all] [--around <message-id>] [--context 5 | --before N --after N]
-  aicrawl search <query> [--group messages|conversations] [--provider claude|chatgpt|all] [--scope visible|transcript|attachments|internal|all] [--role user|assistant|system|developer|tool|attachment|unknown|all] [--path current|all] [--sort relevance|recent] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit 25]
+  aicrawl search <query> [--group messages|conversations] [--provider claude|chatgpt|openclaw|codex|gemini|all] [--scope visible|transcript|attachments|internal|all] [--role user|assistant|system|developer|tool|attachment|unknown|all] [--path current|all] [--sort relevance|recent] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit 25]
   aicrawl sql <readonly-sql> [--json]
-  aicrawl export markdown --out <dir> [--provider claude|chatgpt|all] [--conversation <id>] [--query <query>] [--scope visible|transcript|attachments|internal|all] [--role user|assistant|system|developer|tool|attachment|unknown|all] [--path current|all] [--sort relevance|recent] [--since YYYY-MM-DD] [--until YYYY-MM-DD]
+  aicrawl export markdown --out <dir> [--provider claude|chatgpt|openclaw|codex|gemini|all] [--conversation <id>] [--query <query>] [--scope visible|transcript|attachments|internal|all] [--role user|assistant|system|developer|tool|attachment|unknown|all] [--path current|all] [--sort relevance|recent] [--since YYYY-MM-DD] [--until YYYY-MM-DD]
   aicrawl crawlbar manifest [--out ~/.crawlbar/apps/aicrawl.json]
 
 Global options:
@@ -77,15 +77,18 @@ aicrawl doctor --json
 
 ## `import`
 
-Imports one local official export ZIP or JSON file.
+Imports one local source ZIP, JSON, or JSONL file.
 
 ```bash
 aicrawl import ./claude-export.zip --provider claude
 aicrawl import ./chatgpt-export.zip --provider chatgpt
+aicrawl import ./openclaw-session.jsonl --provider openclaw
+aicrawl import ./codex-session.jsonl --provider codex
+aicrawl import ./gemini-session.json --provider gemini
 aicrawl import ./export.zip --provider auto
 ```
 
-Provider defaults to auto-detection when omitted or set to `auto`. Imports are idempotent by source kind, provider, and source hash. Text output includes a reminder that source files still contain private data.
+Provider defaults to official Claude/ChatGPT export auto-detection when omitted or set to `auto`. Local agent transcript providers must be selected explicitly. Imports are idempotent by source kind, provider, and source hash. Text output includes a reminder that source files still contain private data.
 
 ## `sync web`
 
@@ -119,6 +122,7 @@ Lists conversations in newest-first order.
 ```bash
 aicrawl conversations --limit 25
 aicrawl conversations --provider chatgpt --since 2026-01-01 --until 2026-06-01
+aicrawl conversations --provider codex --json
 aicrawl conversations --json
 ```
 
@@ -153,6 +157,7 @@ Searches the FTS index.
 aicrawl search "known phrase"
 aicrawl search "known phrase" --group conversations --sort recent
 aicrawl search "known phrase" --provider claude --role user
+aicrawl search "known phrase" --provider openclaw
 aicrawl search "known phrase" --scope attachments
 aicrawl search "known phrase" --scope internal --path all
 aicrawl search "AND OR NOT NEAR *"

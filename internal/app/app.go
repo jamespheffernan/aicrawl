@@ -14,6 +14,9 @@ import (
 	"github.com/openclaw/aicrawl/internal/archive"
 	"github.com/openclaw/aicrawl/internal/ingest/chatgptexport"
 	"github.com/openclaw/aicrawl/internal/ingest/claudeexport"
+	"github.com/openclaw/aicrawl/internal/ingest/codexjsonl"
+	"github.com/openclaw/aicrawl/internal/ingest/geminicli"
+	"github.com/openclaw/aicrawl/internal/ingest/openclawjsonl"
 	"github.com/openclaw/aicrawl/internal/sync/browser"
 	"github.com/openclaw/aicrawl/internal/sync/chatgptweb"
 	"github.com/openclaw/aicrawl/internal/sync/claudeweb"
@@ -84,7 +87,7 @@ func (a *App) Run(ctx context.Context, args []string) error {
 }
 
 func (a *App) help() error {
-	_, err := io.WriteString(a.stdout, `aicrawl archives official Claude and ChatGPT conversation exports locally.
+	_, err := io.WriteString(a.stdout, `aicrawl archives AI conversation sources locally.
 
 Usage:
   aicrawl version
@@ -92,13 +95,13 @@ Usage:
   aicrawl doctor [--json]
   aicrawl metadata [--json]
   aicrawl status [--json]
-  aicrawl import <zip-or-json> [--provider claude|chatgpt|auto]
+  aicrawl import <zip-json-or-jsonl> [--provider claude|chatgpt|openclaw|codex|gemini|auto]
   aicrawl sync web --provider chatgpt|claude [--source <json-or-zip>] [--profile <dir> | --cdp-url <url>] [--capture <network.json>] [--dry-run] [--json]
-  aicrawl conversations [--provider claude|chatgpt|all] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit 50]
+  aicrawl conversations [--provider claude|chatgpt|openclaw|codex|gemini|all] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit 50]
   aicrawl messages --conversation <id> [--path current|all] [--around <message-id>] [--context 5 | --before N --after N]
-  aicrawl search <query> [--group messages|conversations] [--provider claude|chatgpt|all] [--scope visible|transcript|attachments|internal|all] [--role user|assistant|system|developer|tool|attachment|unknown|all] [--path current|all] [--sort relevance|recent] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit 25]
+  aicrawl search <query> [--group messages|conversations] [--provider claude|chatgpt|openclaw|codex|gemini|all] [--scope visible|transcript|attachments|internal|all] [--role user|assistant|system|developer|tool|attachment|unknown|all] [--path current|all] [--sort relevance|recent] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit 25]
   aicrawl sql <readonly-sql> [--json]
-  aicrawl export markdown --out <dir> [--provider claude|chatgpt|all] [--conversation <id>] [--query <query>] [--scope visible|transcript|attachments|internal|all] [--role user|assistant|system|developer|tool|attachment|unknown|all] [--path current|all] [--sort relevance|recent] [--since YYYY-MM-DD] [--until YYYY-MM-DD]
+  aicrawl export markdown --out <dir> [--provider claude|chatgpt|openclaw|codex|gemini|all] [--conversation <id>] [--query <query>] [--scope visible|transcript|attachments|internal|all] [--role user|assistant|system|developer|tool|attachment|unknown|all] [--path current|all] [--sort relevance|recent] [--since YYYY-MM-DD] [--until YYYY-MM-DD]
   aicrawl crawlbar manifest [--out ~/.crawlbar/apps/aicrawl.json]
 
 Global options:
@@ -325,7 +328,7 @@ func (a *App) importSource(ctx context.Context, globals globalOptions, args []st
 		return withExitCode(2, err)
 	}
 	if len(parsed.positionals) != 1 {
-		return withExitCode(2, fmt.Errorf("import requires exactly one ZIP or JSON path"))
+		return withExitCode(2, fmt.Errorf("import requires exactly one ZIP, JSON, or JSONL path"))
 	}
 	provider, err := importProvider(parsed.values["provider"])
 	if err != nil {
@@ -347,7 +350,7 @@ func (a *App) importSource(ctx context.Context, globals globalOptions, args []st
 	if globals.format == "json" || parsed.bools["json"] {
 		return writeJSON(a.stdout, stats)
 	}
-	if err := writeTextLine(a.stdout, "imported %d conversations and %d messages from %s export", stats.Conversations, stats.Messages, stats.Provider); err != nil {
+	if err := writeTextLine(a.stdout, "imported %d conversations and %d messages from %s source", stats.Conversations, stats.Messages, stats.Provider); err != nil {
 		return err
 	}
 	return writeTextLine(a.stdout, "%s", stats.PrivacyReminder)
@@ -363,6 +366,21 @@ func importStream(ctx context.Context, ar *archive.Archive, path, provider strin
 	case "chatgpt":
 		return ar.ImportStream(ctx, path, "chatgpt", "chatgpt_export", func(emit archive.ConversationEmitter) error {
 			_, err := chatgptexport.StreamFile(path, emit)
+			return err
+		})
+	case "openclaw":
+		return ar.ImportStream(ctx, path, openclawjsonl.Provider, openclawjsonl.SourceKind, func(emit archive.ConversationEmitter) error {
+			_, err := openclawjsonl.StreamFile(path, emit)
+			return err
+		})
+	case "codex":
+		return ar.ImportStream(ctx, path, codexjsonl.Provider, codexjsonl.SourceKind, func(emit archive.ConversationEmitter) error {
+			_, err := codexjsonl.StreamFile(path, emit)
+			return err
+		})
+	case "gemini":
+		return ar.ImportStream(ctx, path, geminicli.Provider, geminicli.SourceKind, func(emit archive.ConversationEmitter) error {
+			_, err := geminicli.StreamFile(path, emit)
 			return err
 		})
 	case "auto", "":
@@ -1064,10 +1082,10 @@ func providerOrAll(value string) (string, error) {
 		return "all", nil
 	}
 	switch value {
-	case "all", "claude", "chatgpt":
+	case "all", "claude", "chatgpt", "openclaw", "codex", "gemini":
 		return value, nil
 	default:
-		return "", fmt.Errorf("--provider must be claude, chatgpt, or all")
+		return "", fmt.Errorf("--provider must be claude, chatgpt, openclaw, codex, gemini, or all")
 	}
 }
 
@@ -1076,10 +1094,10 @@ func importProvider(value string) (string, error) {
 		return "auto", nil
 	}
 	switch value {
-	case "auto", "claude", "chatgpt":
+	case "auto", "claude", "chatgpt", "openclaw", "codex", "gemini":
 		return value, nil
 	default:
-		return "", fmt.Errorf("--provider must be claude, chatgpt, or auto")
+		return "", fmt.Errorf("--provider must be claude, chatgpt, openclaw, codex, gemini, or auto")
 	}
 }
 

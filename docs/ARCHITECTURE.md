@@ -1,19 +1,18 @@
 # Architecture
 
-`aicrawl` is a local-first archive for Claude and ChatGPT conversation data. The v0.1 product is a CLI that imports local official export ZIP/JSON files and captured web conversation detail payloads into SQLite, preserves the original JSON payloads, builds a normalized text index, and exposes read-only retrieval, search, SQL, Markdown export, and CrawlBar metadata.
+`aicrawl` is a local-first archive for AI conversation data. The v0.1 product is a CLI that imports local official export ZIP/JSON files, captured web conversation detail payloads, and selected local agent session files into SQLite, preserves the original JSON payloads, builds a normalized text index, and exposes read-only retrieval, search, SQL, Markdown export, and CrawlBar metadata.
 
 ## User Workflow
 
-1. Request an official export from Claude or ChatGPT.
-2. Download the export ZIP and keep it in a private local directory.
-3. Run `aicrawl init` to create a private config and SQLite archive.
-4. Run `aicrawl import <zip-or-json> --provider claude|chatgpt|auto`.
-5. Use `conversations`, `messages`, `search`, `sql`, or `export markdown` against the local archive.
-6. Optionally run `aicrawl crawlbar manifest` so CrawlBar can discover the local control surface.
+1. Collect an official export, captured web payload, or local session file in a private local directory.
+2. Run `aicrawl init` to create a private config and SQLite archive.
+3. Run `aicrawl import <path> --provider claude|chatgpt|openclaw|codex|gemini|auto`.
+4. Use `conversations`, `messages`, `search`, `sql`, or `export markdown` against the local archive.
+5. Optionally run `aicrawl crawlbar manifest` so CrawlBar can discover the local control surface.
 
 For captured web payloads, run `aicrawl sync web --provider chatgpt|claude --source <json-or-zip>`. Dry-run mode reports auth state, contract state, source counts, and freshness without writing.
 
-The importer does not delete source exports. Those files still contain private data after import.
+The importer does not delete source files. Those files still contain private data after import.
 
 ## Package Layout
 
@@ -25,6 +24,10 @@ internal/schema/          schema migrations using PRAGMA user_version
 internal/ingest/
   claudeexport/           official Claude export parser
   chatgptexport/          official ChatGPT export parser
+  openclawjsonl/          OpenClaw session JSONL parser
+  codexjsonl/             Codex rollout JSONL parser
+  geminicli/              Gemini CLI session JSON parser
+  localtext/              shared local transcript text/timestamp helpers
 internal/sync/
   browser/                browser-profile and CDP preflight for web sync
   webdiscover/            redacted network capture contract discovery
@@ -42,8 +45,8 @@ Provider-specific parsing stays under `internal/ingest/*`. Reusable local archiv
 
 ```mermaid
 flowchart LR
-  User["User export ZIP/JSON"] --> Source["internal/security source reader"]
-  Source --> Detect["Provider selection claude, chatgpt, or auto"]
+  User["Export ZIP/JSON or local session file"] --> Source["source reader"]
+  Source --> Detect["Provider selection or official export auto-detect"]
   Detect --> Parser["internal/ingest provider parser"]
   Parser --> Canonical["Canonical conversations, messages, edges, attachments"]
   Canonical --> Archive["internal/archive import transaction"]

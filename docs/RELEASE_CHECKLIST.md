@@ -52,10 +52,20 @@ Run:
 "$BIN" status --json
 "$BIN" import ./testdata/redacted/claude-export.fixture.zip --provider claude --json
 "$BIN" import ./testdata/redacted/chatgpt-export.fixture.zip --provider chatgpt --json
+"$BIN" import ./testdata/redacted/openclaw-session.fixture.jsonl --provider openclaw --json
+"$BIN" import ./testdata/redacted/codex-session.fixture.jsonl --provider codex --json
+"$BIN" import ./testdata/redacted/gemini-session.fixture.json --provider gemini --json
+"$BIN" sync web --provider chatgpt --source ./testdata/redacted/chatgpt-web-conversation.fixture.json --json
+"$BIN" sync web --provider claude --source ./testdata/redacted/claude-web-conversation.fixture.json --json
 "$BIN" import ./testdata/redacted/claude-export.fixture.zip --provider claude --json
 "$BIN" import ./testdata/redacted/chatgpt-export.fixture.zip --provider chatgpt --json
+"$BIN" sync web --provider chatgpt --source ./testdata/redacted/chatgpt-web-conversation.fixture.json --dry-run --json
 "$BIN" conversations --limit 10
 "$BIN" messages --conversation chatgpt:chatgpt-conv-branchy --path all
+"$BIN" search "openclaw jsonl fixture assistant phrase" --provider openclaw --json
+"$BIN" search "codex jsonl fixture assistant phrase" --provider codex --json
+"$BIN" search "gemini cli fixture assistant phrase" --provider gemini --json
+"$BIN" search "web sync claude fixture assistant phrase" --provider claude --json
 "$BIN" search "AND OR NOT NEAR *"
 "$BIN" sql "select count(*) from messages"
 ! "$BIN" sql "update messages set role = 'x'"
@@ -67,6 +77,7 @@ Expected result:
 
 - JSON commands emit valid JSON.
 - Fixture re-imports report already-imported status.
+- Local transcript and captured web payload fixtures are searchable after import.
 - Reserved-term search succeeds.
 - Read-only SQL succeeds.
 - Mutating SQL is rejected.

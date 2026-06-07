@@ -34,6 +34,7 @@ Maintainers should review:
 - SQLite schema and migration behavior in `internal/schema/`.
 - import idempotency and raw payload preservation in `internal/archive/`.
 - Claude and ChatGPT parsing under `internal/ingest/`.
+- OpenClaw, Codex, and Gemini local transcript parsing under `internal/ingest/`.
 - ZIP safety and source limits in `internal/security/`.
 - browser-profile sync preflight under `internal/sync/`.
 - FTS query handling in `internal/textnorm/`.
@@ -41,7 +42,7 @@ Maintainers should review:
 
 ## Privacy Posture
 
-v0.1 imports local official exports, imports captured ChatGPT/Claude web detail payload files, and can run read-only web-sync preflight. It does not make network calls for import, sync source import, sync preflight, search, SQL, Markdown export, or CrawlBar manifest generation. It does not implement session-token scraping, live CDP/page-context fetching, browser automation, background sync, or cloud storage.
+v0.1 imports local official exports, captured ChatGPT/Claude web detail payload files, and OpenClaw/Codex/Gemini local session files. It can also run read-only web-sync preflight. It does not make network calls for import, sync source import, sync preflight, search, SQL, Markdown export, or CrawlBar manifest generation. It does not implement session-token scraping, live CDP/page-context fetching, browser automation, background sync, or cloud storage.
 
 Private data is protected by:
 
@@ -68,6 +69,7 @@ Private data is protected by:
 Future work should stay out of v0.1 unless separately approved:
 
 - local Claude Code transcript ingestion;
+- Cursor local store ingestion;
 - live ChatGPT/Claude browser-profile sync after endpoint contracts are proven current;
 - richer attachment extraction;
 - schema migrations beyond v1;

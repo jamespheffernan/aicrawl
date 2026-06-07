@@ -464,6 +464,70 @@ func TestSyncWebSourceImportsSearchablePayloadAndIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestImportLocalTranscriptSourcesAreSearchable(t *testing.T) {
+	tests := []struct {
+		name     string
+		provider string
+		fixture  string
+		query    string
+	}{
+		{
+			name:     "openclaw",
+			provider: "openclaw",
+			fixture:  "openclaw-session.fixture.jsonl",
+			query:    "openclaw jsonl fixture assistant phrase",
+		},
+		{
+			name:     "codex",
+			provider: "codex",
+			fixture:  "codex-session.fixture.jsonl",
+			query:    "codex jsonl fixture assistant phrase",
+		},
+		{
+			name:     "gemini",
+			provider: "gemini",
+			fixture:  "gemini-session.fixture.json",
+			query:    "gemini cli fixture assistant phrase",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+			t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+			t.Setenv("XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
+
+			var stdout bytes.Buffer
+			cli := New()
+			cli.stdout = &stdout
+			fixturePath := filepath.Join("..", "..", "testdata", "redacted", tt.fixture)
+			if err := cli.Run(context.Background(), []string{"import", fixturePath, "--provider", tt.provider, "--json"}); err != nil {
+				t.Fatalf("import %s fixture: %v", tt.provider, err)
+			}
+			var stats archive.ImportStats
+			if err := json.Unmarshal(stdout.Bytes(), &stats); err != nil {
+				t.Fatalf("decode import stats: %v", err)
+			}
+			if stats.Provider != tt.provider || stats.Conversations != 1 || stats.Messages == 0 {
+				t.Fatalf("stats = %+v, want one %s conversation with messages", stats, tt.provider)
+			}
+			stdout.Reset()
+
+			if err := cli.Run(context.Background(), []string{"search", tt.query, "--provider", tt.provider, "--json"}); err != nil {
+				t.Fatalf("search %s fixture: %v", tt.provider, err)
+			}
+			var hits []archive.SearchHit
+			if err := json.Unmarshal(stdout.Bytes(), &hits); err != nil {
+				t.Fatalf("decode search hits: %v", err)
+			}
+			if len(hits) != 1 || hits[0].Provider != tt.provider {
+				t.Fatalf("hits = %+v, want one %s hit", hits, tt.provider)
+			}
+		})
+	}
+}
+
 func writeLargeChatGPTFixture(t *testing.T, path string, conversations int) {
 	t.Helper()
 	var b strings.Builder

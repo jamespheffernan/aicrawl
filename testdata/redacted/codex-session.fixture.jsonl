@@ -1,0 +1,4 @@
+{"timestamp":"2025-10-09T08:53:20Z","type":"session_meta","payload":{"id":"codex-session-1","timestamp":"2025-10-09T08:53:20Z","cwd":"/private/workspace","source":"fixture"}}
+{"timestamp":"2025-10-09T08:53:21Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"codex jsonl fixture user phrase"}]}}
+{"timestamp":"2025-10-09T08:53:22Z","type":"response_item","payload":{"type":"reasoning"}}
+{"timestamp":"2025-10-09T08:53:23Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"codex jsonl fixture assistant phrase"}]}}
