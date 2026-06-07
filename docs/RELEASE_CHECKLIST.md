@@ -83,7 +83,7 @@ cp ./testdata/redacted/codex-session.fixture.jsonl "$SMOKE/codex-root/session.js
 "$BIN" crawlbar manifest --out "$SMOKE/aicrawl.crawlbar.json"
 ```
 
-Optional live-browser dry-run smoke, only when a logged-in provider browser page is already open in a browser with a Chrome DevTools endpoint. These commands count list candidates only; they must not fetch detail payloads or create/open the archive when run in the isolated home above:
+Optional live-browser dry-run smoke, only when a logged-in provider browser page is already open in a browser with a Chrome DevTools endpoint. These commands count list candidates only; they must not fetch detail payloads or create/write the archive when run in the isolated home above:
 
 ```bash
 "$BIN" sync web --provider chatgpt --cdp-url http://127.0.0.1:9222 --max-conversations 1 --dry-run --json

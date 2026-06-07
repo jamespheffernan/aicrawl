@@ -148,7 +148,7 @@ With `--dry-run`, the command does not write the archive. It reports:
 
 Without `--source`, non-dry-run `sync web` uses `--cdp-url` when provided; otherwise it launches the dedicated provider profile and discovers the local CDP endpoint from Chrome's `DevToolsActivePort` file. It does not read browser cookies, tokens, headers, or session storage.
 
-Dry-run with `--cdp-url` still attaches to the provider browser page, but it only fetches the list endpoints needed to count candidates. It does not open a provider tab, fetch conversation details, write temporary payload files, or open/create the archive.
+Dry-run with `--cdp-url` still attaches to the provider browser page, but it only fetches the list endpoints needed to count candidates. It does not open a provider tab, fetch conversation details, write temporary payload files, or create/write the archive. If an archive already exists, dry-run may open it read-only to report freshness.
 
 ## `schedule launchd`
 
