@@ -1,19 +1,19 @@
 # Architecture
 
-`aicrawl` is a local-first archive for AI conversation data. The v0.1 product is a CLI that imports local official export ZIP/JSON files, captured/live web conversation detail payloads, selected local agent session files, and Cursor/Hermes chat stores into SQLite, preserves the original JSON payloads, builds a normalized text index, and exposes read-only retrieval, search, SQL, Markdown export, and CrawlBar metadata.
+`aicrawl` is a local-first archive for AI conversation data. The v0.1 product is a CLI that imports local official export ZIP/JSON files, captured/live web conversation detail payloads, ChatGPT macOS app cache conversation IDs as live-web detail seeds, selected local agent session files, and Cursor/Hermes chat stores into SQLite, preserves the original JSON payloads, builds a normalized text index, and exposes read-only retrieval, search, SQL, Markdown export, and CrawlBar metadata.
 
 ## User Workflow
 
-1. Collect an official export, captured web payload, local session file, Cursor `store.db`/`state.vscdb`, or Hermes `state.db` in a private local directory.
+1. Collect an official export, captured web payload, local session file, Cursor `store.db`/`state.vscdb`, Hermes `state.db`, or a native ChatGPT macOS app cache root in a private local directory.
 2. Run `aicrawl init` to create a private config and SQLite archive.
 3. Run `aicrawl import <path> --provider claude|chatgpt|openclaw|codex|gemini|claude-code|cursor|hermes|auto`.
-4. Use `aicrawl sync web --provider chatgpt|claude --cdp-url <url>` for frequent recent web conversation capture.
+4. Use `aicrawl sync web --provider chatgpt|claude --cdp-url <url>` for frequent recent web conversation capture, and optionally add `--chatgpt-app-cache "$HOME/Library/Application Support/com.openai.chat"` for ChatGPT native app cache ID coverage.
 5. Periodically run `aicrawl reconcile <official-export> --provider chatgpt|claude|auto` to compare official exports against the archive and identify any backfill needed.
 6. Use `conversations`, `messages`, `search`, `sql`, or `export markdown` against the local archive.
 7. Optionally run `aicrawl schedule launchd ...` to create a recurring macOS web-sync LaunchAgent.
 8. Optionally run `aicrawl crawlbar manifest` so CrawlBar can discover the local control surface.
 
-For web payloads, run `aicrawl sync web --provider chatgpt|claude --cdp-url <url>` against an already authenticated browser target, or pass `--source <json-or-zip>` for captured detail payloads. Dry-run mode reports auth state, contract state, source counts, and freshness without writing.
+For web payloads, run `aicrawl sync web --provider chatgpt|claude --cdp-url <url>` against an already authenticated browser target, add `--chatgpt-app-cache <dir>` to seed ChatGPT detail fetches from native macOS app cache conversation filenames, or pass `--source <json-or-zip>` for captured detail payloads. Dry-run mode reports auth state, contract state, source counts, and freshness without writing.
 
 The importer does not delete source files. Those files still contain private data after import. `import --dry-run` parses sources and reports counts without creating or writing the archive. `reconcile` streams official exports read-only and compares source IDs with archived rows; it never backfills by itself.
 
@@ -75,6 +75,7 @@ flowchart LR
   NetworkCapture["Redacted network JSON capture"] --> ContractDiscovery["endpoint contract discovery"]
   ArchiveState["SQLite sync_state"] --> Freshness["freshness report"]
   SourcePayload["Captured detail payload JSON/ZIP"] --> WebAdapter["web payload adapter"]
+  ChatGPTAppCache["ChatGPT app cache filenames"] --> CDP
   CDP["CDP page-context fetch"] --> WebAdapter
   WebAdapter --> Archive["archive import transaction"]
   SessionPlan --> Report["sync web report"]
@@ -82,7 +83,7 @@ flowchart LR
   Freshness --> Report
 ```
 
-`aicrawl sync web` is the browser-profile lane. It validates the intended auth boundary and reports whether a ChatGPT or Claude capture still exposes recognizable conversation list/detail calls. With `--cdp-url`, it attaches to an already running browser, finds or opens a provider page, and runs same-origin list/detail `fetch()` calls from page context. With `--profile`, it launches Chrome/Chromium/Microsoft Edge against a dedicated user-data directory, binds CDP to `127.0.0.1`, opens the provider page, and either reports `login_required` for a new profile or runs the same live fetch path for an existing profile. With `--source`, it imports captured conversation detail payloads under `chatgpt_web` or `claude_web`.
+`aicrawl sync web` is the browser-profile lane. It validates the intended auth boundary and reports whether a ChatGPT or Claude capture still exposes recognizable conversation list/detail calls. With `--cdp-url`, it attaches to an already running browser, finds or opens a provider page, and runs same-origin list/detail `fetch()` calls from page context. With `--profile`, it launches Chrome/Chromium/Microsoft Edge against a dedicated user-data directory, binds CDP to `127.0.0.1`, opens the provider page, and either reports `login_required` for a new profile or runs the same live fetch path for an existing profile. With `--chatgpt-app-cache`, ChatGPT sync scans native macOS app `conversations-v3-*/*.data` filenames for conversation IDs and fetches those exact details through the same attached browser page; the opaque `.data` bodies are not read. With `--source`, it imports captured conversation detail payloads under `chatgpt_web` or `claude_web`.
 
 Live CDP fetches do not copy cookies, bearer tokens, session headers, or browser storage into config. The fetched detail batch is written to a private temporary cache file, imported through the same source-hash/idempotency path as captured payload files, then removed. When provider list/detail payloads include update timestamps, live sync stores a `provider_updated_at` cursor in `sync_state`; later runs pass that watermark into the provider adapter, skip older list candidates, and return a successful no-change result without detail fetches or archive writes.
 
@@ -128,7 +129,7 @@ FTS reserved words and operators such as `AND`, `OR`, `NOT`, `NEAR`, and `*` are
 
 ## Privacy Boundary
 
-`aicrawl` v0.1 imports official local exports, captured web payload files, bounded live CDP page-context web payloads, and local agent transcript files. It does not use session-token scraping, browser automation to click export buttons, cloud sync, embeddings, background watches, or network search/export. Import, captured source import, profile-only sync preflight, search, SQL, Markdown export, LaunchAgent generation, and CrawlBar manifest generation are local operations. Live web sync talks to the attached browser target and provider same-origin endpoints from that page. Dry-run CDP sync uses the same browser boundary against an already open provider page but limits provider calls to list-only candidate counting and does not open a provider tab, fetch conversation details, or write the archive.
+`aicrawl` v0.1 imports official local exports, captured web payload files, bounded live CDP page-context web payloads, ChatGPT native app cache conversation IDs, and local agent transcript files. It does not use session-token scraping, browser automation to click export buttons, cloud sync, embeddings, background watches, or network search/export. Import, captured source import, ChatGPT app cache ID discovery, profile-only sync preflight, search, SQL, Markdown export, LaunchAgent generation, and CrawlBar manifest generation are local operations. Live web sync talks to the attached browser target and provider same-origin endpoints from that page. Dry-run CDP sync uses the same browser boundary against an already open provider page but limits provider calls to list-only candidate counting and does not open a provider tab, fetch conversation details, or write the archive.
 
 Private data should stay in ignored local paths such as `imports/private/`, platform runtime directories, SQLite files, logs, and generated Markdown export directories. Public fixtures must be synthetic or redacted.
 

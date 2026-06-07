@@ -22,6 +22,7 @@ import (
 	"github.com/openclaw/aicrawl/internal/ingest/openclawjsonl"
 	"github.com/openclaw/aicrawl/internal/sync/browser"
 	"github.com/openclaw/aicrawl/internal/sync/cdp"
+	"github.com/openclaw/aicrawl/internal/sync/chatgptappcache"
 	"github.com/openclaw/aicrawl/internal/sync/chatgptweb"
 	"github.com/openclaw/aicrawl/internal/sync/claudeweb"
 	"github.com/openclaw/aicrawl/internal/sync/webdiscover"
@@ -105,8 +106,8 @@ Usage:
   aicrawl status [--json]
   aicrawl import <zip-json-jsonl-db-or-dir> [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|cursor|hermes|auto] [--dry-run] [--json]
   aicrawl reconcile <official-export-zip-or-json> [--provider claude|chatgpt|auto] [--json]
-  aicrawl sync web --provider chatgpt|claude [--source <json-or-zip>] [--profile <dir> | --cdp-url <url>] [--browser <path>] [--remote-debugging-port 0] [--capture <network.json>] [--max-conversations 50] [--dry-run] [--json]
-  aicrawl schedule launchd --provider chatgpt|claude [--cdp-url <url> | --profile <dir>] [--browser <path>] [--remote-debugging-port 0] [--interval-minutes 15] [--max-conversations 50] [--out <plist>] [--json]
+  aicrawl sync web --provider chatgpt|claude [--source <json-or-zip>] [--profile <dir> | --cdp-url <url>] [--browser <path>] [--remote-debugging-port 0] [--capture <network.json>] [--chatgpt-app-cache <dir>] [--max-conversations 50] [--dry-run] [--json]
+  aicrawl schedule launchd --provider chatgpt|claude [--cdp-url <url> | --profile <dir>] [--browser <path>] [--remote-debugging-port 0] [--chatgpt-app-cache <dir>] [--interval-minutes 15] [--max-conversations 50] [--out <plist>] [--json]
   aicrawl conversations [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|cursor|hermes|all] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit 50]
   aicrawl messages --conversation <id> [--path current|all] [--around <message-id>] [--context 5 | --before N --after N]
   aicrawl search <query> [--group messages|conversations] [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|cursor|hermes|all] [--scope visible|transcript|attachments|internal|all] [--role user|assistant|system|developer|tool|attachment|unknown|all] [--path current|all] [--sort relevance|recent] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit 25]
@@ -597,7 +598,7 @@ func (a *App) sync(ctx context.Context, globals globalOptions, args []string) er
 }
 
 func (a *App) syncWeb(ctx context.Context, globals globalOptions, args []string) error {
-	parsed, err := parseOptions(args, boolSet("json", "dry-run"), valueSet("provider", "profile", "cdp-url", "browser", "remote-debugging-port", "capture", "source", "max-conversations"))
+	parsed, err := parseOptions(args, boolSet("json", "dry-run"), valueSet("provider", "profile", "cdp-url", "browser", "remote-debugging-port", "capture", "source", "chatgpt-app-cache", "max-conversations"))
 	if err != nil {
 		return withExitCode(2, err)
 	}
@@ -611,6 +612,16 @@ func (a *App) syncWeb(ctx context.Context, globals globalOptions, args []string)
 	sourcePath := parsed.values["source"]
 	if sourcePath != "" {
 		sourcePath = expandPath(sourcePath)
+	}
+	chatGPTAppCachePath := parsed.values["chatgpt-app-cache"]
+	if chatGPTAppCachePath != "" {
+		chatGPTAppCachePath = expandPath(chatGPTAppCachePath)
+	}
+	if chatGPTAppCachePath != "" && provider != chatgptweb.Provider {
+		return withExitCode(2, fmt.Errorf("--chatgpt-app-cache is only supported with --provider chatgpt"))
+	}
+	if chatGPTAppCachePath != "" && sourcePath != "" {
+		return withExitCode(2, fmt.Errorf("--chatgpt-app-cache cannot be combined with --source"))
 	}
 	dryRun := parsed.bools["dry-run"]
 	maxConversations, err := parsePositiveOption("max-conversations", parsed.values["max-conversations"], 50)
@@ -677,6 +688,18 @@ func (a *App) syncWeb(ctx context.Context, globals globalOptions, args []string)
 		}
 		sourceStats = &stats
 	}
+	var chatGPTAppIDs []string
+	if chatGPTAppCachePath != "" {
+		stats, ids, err := inspectChatGPTAppCache(chatGPTAppCachePath, maxConversations)
+		if err != nil {
+			return err
+		}
+		chatGPTAppIDs = ids
+		sourceStats = &stats
+		if len(chatGPTAppIDs) == 0 && !dryRun {
+			return fmt.Errorf("ChatGPT app cache contains no conversation ID candidates")
+		}
+	}
 	if !dryRun {
 		if sourcePath == "" && session.CDPURL == "" {
 			firstRunLoginRequired := session.AuthState == "login_required"
@@ -726,7 +749,7 @@ func (a *App) syncWeb(ctx context.Context, globals globalOptions, args []string)
 		if sourcePath != "" {
 			stats, err = syncWebSource(ctx, ar, sourcePath, provider)
 		} else {
-			stats, err = syncWebLive(ctx, ar, rt, provider, session, maxConversations)
+			stats, err = syncWebLive(ctx, ar, rt, provider, session, maxConversations, chatGPTAppIDs)
 		}
 		if err != nil {
 			return err
@@ -786,6 +809,20 @@ func inspectWebSource(path, provider string) (websync.SourceStats, error) {
 		return websync.SourceStats{}, fmt.Errorf("unsupported web provider %q", provider)
 	}
 	return stats, nil
+}
+
+func inspectChatGPTAppCache(path string, maxConversations int) (websync.SourceStats, []string, error) {
+	report, err := chatgptappcache.Discover(path, maxConversations)
+	if err != nil {
+		return websync.SourceStats{}, nil, err
+	}
+	stats := websync.SourceStats{
+		Kind:          report.SourceKind,
+		Path:          path,
+		Conversations: len(report.IDs),
+		Warnings:      append([]string(nil), report.Warnings...),
+	}
+	return stats, append([]string(nil), report.IDs...), nil
 }
 
 func inspectWebLive(ctx context.Context, provider string, session browser.SessionPlan, maxConversations int) (websync.SourceStats, error) {
@@ -848,7 +885,7 @@ func syncWebSource(ctx context.Context, ar *archive.Archive, path, provider stri
 	}
 }
 
-func syncWebLive(ctx context.Context, ar *archive.Archive, rt runtime, provider string, session browser.SessionPlan, maxConversations int) (archive.ImportStats, error) {
+func syncWebLive(ctx context.Context, ar *archive.Archive, rt runtime, provider string, session browser.SessionPlan, maxConversations int, chatGPTAppIDs []string) (archive.ImportStats, error) {
 	spec, err := browser.Provider(provider)
 	if err != nil {
 		return archive.ImportStats{}, err
@@ -880,7 +917,7 @@ func syncWebLive(ctx context.Context, ar *archive.Archive, rt runtime, provider 
 	var syncStatuses []archive.ConversationSyncStatus
 	switch provider {
 	case chatgptweb.Provider:
-		result, fetchErr := chatgptweb.FetchLiveWithCursor(ctx, chatGPTCDPFetcher{session: cdpSession}, chatgptweb.LiveOptions{MaxConversations: maxConversations, CursorAfter: cursorAfter})
+		result, fetchErr := chatgptweb.FetchLiveWithCursor(ctx, chatGPTCDPFetcher{session: cdpSession}, chatgptweb.LiveOptions{MaxConversations: maxConversations, CursorAfter: cursorAfter, SeedConversationIDs: chatGPTAppIDs})
 		err = fetchErr
 		payload = result.Payload
 		warnings = append(warnings, result.Warnings...)

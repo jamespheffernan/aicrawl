@@ -1354,6 +1354,53 @@ func TestScheduleLaunchdWritesProfileLaunchPlist(t *testing.T) {
 	}
 }
 
+func TestScheduleLaunchdWritesChatGPTAppCacheArgument(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
+
+	outPath := filepath.Join(home, "LaunchAgents", "aicrawl-chatgpt-app-cache.plist")
+	cachePath := filepath.Join(home, "Library", "Application Support", "com.openai.chat")
+	var stdout bytes.Buffer
+	cli := New()
+	cli.stdout = &stdout
+	if err := cli.Run(context.Background(), []string{
+		"schedule", "launchd",
+		"--provider", "chatgpt",
+		"--cdp-url", "http://127.0.0.1:9222",
+		"--chatgpt-app-cache", cachePath,
+		"--out", outPath,
+		"--json",
+	}); err != nil {
+		t.Fatalf("schedule launchd app cache: %v", err)
+	}
+	var result launchdResult
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("decode launchd app cache result: %v", err)
+	}
+	if result.ChatGPTAppCachePath != cachePath {
+		t.Fatalf("app cache path = %q, want %q", result.ChatGPTAppCachePath, cachePath)
+	}
+	data, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("read plist: %v", err)
+	}
+	plist := string(data)
+	for _, want := range []string{
+		"<string>--chatgpt-app-cache</string>",
+		"<string>" + cachePath + "</string>",
+	} {
+		if !strings.Contains(plist, want) {
+			t.Fatalf("plist missing %q:\n%s", want, plist)
+		}
+	}
+	if strings.Contains(plist, "token") || strings.Contains(plist, "Authorization") {
+		t.Fatalf("plist contains disallowed auth material:\n%s", plist)
+	}
+}
+
 func TestSyncWebLiveCDPImportsSearchableChatGPTPayload(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -1441,6 +1488,108 @@ func TestSyncWebLiveCDPImportsSearchableChatGPTPayload(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("status missing chatgpt web sync state: %+v", status.WebSync)
+	}
+}
+
+func TestSyncWebLiveCDPImportsChatGPTAppCacheIDs(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
+
+	cacheDir := filepath.Join(home, "Library", "Application Support", "com.openai.chat", "conversations-v3-account")
+	if err := os.MkdirAll(cacheDir, 0o700); err != nil {
+		t.Fatalf("create cache dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(cacheDir, "live-cdp-chatgpt.data"), []byte("opaque native app cache body"), 0o600); err != nil {
+		t.Fatalf("write cache id file: %v", err)
+	}
+
+	server := newFakeChatGPTCDPServer(t)
+	defer server.Close()
+
+	var stdout bytes.Buffer
+	cli := New()
+	cli.stdout = &stdout
+	if err := cli.Run(context.Background(), []string{
+		"sync", "web",
+		"--provider", "chatgpt",
+		"--cdp-url", server.URL,
+		"--chatgpt-app-cache", filepath.Dir(cacheDir),
+		"--max-conversations", "1",
+		"--json",
+	}); err != nil {
+		t.Fatalf("sync web app cache IDs: %v", err)
+	}
+	var stats archive.ImportStats
+	if err := json.Unmarshal(stdout.Bytes(), &stats); err != nil {
+		t.Fatalf("decode sync stats: %v", err)
+	}
+	if stats.Provider != "chatgpt" || stats.Conversations != 1 || stats.Messages != 1 {
+		t.Fatalf("stats = %+v, want one app-cache-seeded conversation/message", stats)
+	}
+	stdout.Reset()
+
+	if err := cli.Run(context.Background(), []string{"search", "live cdp chatgpt assistant phrase", "--provider", "chatgpt", "--json"}); err != nil {
+		t.Fatalf("search app-cache-seeded import: %v", err)
+	}
+	var hits []archive.SearchHit
+	if err := json.Unmarshal(stdout.Bytes(), &hits); err != nil {
+		t.Fatalf("decode search hits: %v", err)
+	}
+	if len(hits) != 1 {
+		t.Fatalf("hits = %+v, want one app-cache-seeded hit", hits)
+	}
+}
+
+func TestSyncWebDryRunReportsChatGPTAppCacheIDsWithoutCreatingArchive(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
+
+	cacheDir := filepath.Join(home, "chatgpt-cache", "conversations-v3-account")
+	if err := os.MkdirAll(cacheDir, 0o700); err != nil {
+		t.Fatalf("create cache dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(cacheDir, "chatgpt-cache-id.data"), []byte("opaque"), 0o600); err != nil {
+		t.Fatalf("write cache id file: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	cli := New()
+	cli.stdout = &stdout
+	if err := cli.Run(context.Background(), []string{
+		"sync", "web",
+		"--provider", "chatgpt",
+		"--chatgpt-app-cache", filepath.Dir(cacheDir),
+		"--dry-run",
+		"--json",
+	}); err != nil {
+		t.Fatalf("sync web app cache dry-run: %v", err)
+	}
+	var report websync.Report
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode dry-run report: %v", err)
+	}
+	if report.Source == nil || report.Source.Kind != "chatgpt_app_cache_ids" || report.Source.Conversations != 1 || report.Source.Messages != 0 {
+		t.Fatalf("source stats = %+v, want one app cache candidate and no messages", report.Source)
+	}
+	stdout.Reset()
+
+	if err := cli.Run(context.Background(), []string{"status", "--json"}); err != nil {
+		t.Fatalf("status after app cache dry-run: %v", err)
+	}
+	var status struct {
+		State string `json:"state"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &status); err != nil {
+		t.Fatalf("decode status: %v", err)
+	}
+	if status.State != "uninitialized" {
+		t.Fatalf("status after app cache dry-run = %q, want uninitialized", status.State)
 	}
 }
 

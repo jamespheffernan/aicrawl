@@ -89,6 +89,51 @@ func TestFetchLiveWithCursorRecordsChatGPTProviderWatermark(t *testing.T) {
 	}
 }
 
+func TestFetchLiveWithSeedConversationIDsFetchesDetailsWithoutList(t *testing.T) {
+	result, err := FetchLiveWithCursor(context.Background(), fakeStatusFetcher{
+		"https://chatgpt.com/backend-api/conversation/chatgpt-seed-new": {
+			Status: 200,
+			Body:   []byte(chatGPTDetail("chatgpt-seed-new", "seeded detail assistant phrase")),
+		},
+		"https://chatgpt.com/backend-api/conversation/chatgpt-seed-missing": {
+			Status: 404,
+			Body:   []byte(`{"error":"missing"}`),
+		},
+	}, LiveOptions{
+		MaxConversations:    3,
+		SeedConversationIDs: []string{"chatgpt-seed-new", "chatgpt-seed-new", "chatgpt-seed-missing"},
+	})
+	if err != nil {
+		t.Fatalf("FetchLiveWithCursor seeded: %v", err)
+	}
+	var conversations []map[string]any
+	if err := json.Unmarshal(result.Payload, &conversations); err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+	if len(conversations) != 1 || conversations[0]["id"] != "chatgpt-seed-new" {
+		t.Fatalf("conversations = %+v, want only accessible seeded detail", conversations)
+	}
+	if result.CandidateConversations != 2 || result.FetchedConversations != 1 {
+		t.Fatalf("result counts = %+v, want two unique candidates and one fetched conversation", result)
+	}
+	if len(result.SkippedDetails) != 1 || result.SkippedDetails[0].ID != "chatgpt-seed-missing" || result.SkippedDetails[0].Status != 404 {
+		t.Fatalf("skipped details = %+v, want inaccessible seeded detail", result.SkippedDetails)
+	}
+}
+
+func TestInspectLiveWithSeedConversationIDsDoesNotFetch(t *testing.T) {
+	inspection, err := InspectLive(context.Background(), fakeStatusFetcher{}, LiveOptions{
+		MaxConversations:    1,
+		SeedConversationIDs: []string{"chatgpt-seed-one", "chatgpt-seed-two"},
+	})
+	if err != nil {
+		t.Fatalf("InspectLive seeded: %v", err)
+	}
+	if inspection.CandidateConversations != 1 {
+		t.Fatalf("inspection = %+v, want limited seeded candidate count", inspection)
+	}
+}
+
 func TestInspectLiveCountsChatGPTListCandidatesWithoutDetails(t *testing.T) {
 	inspection, err := InspectLive(context.Background(), fakeStatusFetcher{
 		"https://chatgpt.com/backend-api/conversations?offset=0&limit=2&order=updated": {

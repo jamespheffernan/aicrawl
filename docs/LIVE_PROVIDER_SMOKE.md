@@ -35,6 +35,18 @@ scripts/live-provider-smoke.sh --provider claude --cdp-url http://127.0.0.1:9223
 
 Passing evidence is aggregate output with `source_kind live_list` and a candidate count, or a clear `live_list_unavailable` warning if the logged-in provider page is not attached. Do not paste raw JSON output into public issues or PRs.
 
+For native ChatGPT macOS app coverage, add the app cache root. This discovers conversation IDs from `conversations-v3-*/*.data` filenames only; dry-run does not read cache bodies or fetch detail payloads.
+
+```bash
+scripts/live-provider-smoke.sh --provider chatgpt \
+  --cdp-url http://127.0.0.1:9222 \
+  --chatgpt-app-cache "$HOME/Library/Application Support/com.openai.chat" \
+  --mode dry-run \
+  --max-conversations 10
+```
+
+Passing evidence is aggregate output with `source_kind chatgpt_app_cache_ids` and a candidate count.
+
 ## Write Proof
 
 Write mode imports at most `--max-conversations` recent conversations into the script's isolated temp archive. Use this only when it is acceptable to place a bounded copy of real recent transcript data in a temporary local archive.
@@ -45,6 +57,16 @@ scripts/live-provider-smoke.sh --provider claude --cdp-url http://127.0.0.1:9223
 ```
 
 Passing evidence is aggregate output with provider/source kind plus conversation and message counts. The temporary archive is deleted automatically unless `--keep-output` is passed.
+
+For ChatGPT app-cache-seeded write proof:
+
+```bash
+scripts/live-provider-smoke.sh --provider chatgpt \
+  --cdp-url http://127.0.0.1:9222 \
+  --chatgpt-app-cache "$HOME/Library/Application Support/com.openai.chat" \
+  --mode write \
+  --max-conversations 1
+```
 
 ## Profile-Launch Boundary
 

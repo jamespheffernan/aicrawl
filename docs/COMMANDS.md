@@ -13,8 +13,8 @@ Usage:
   aicrawl status [--json]
   aicrawl import <zip-json-jsonl-db-or-dir> [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|cursor|hermes|auto] [--dry-run] [--json]
   aicrawl reconcile <official-export-zip-or-json> [--provider claude|chatgpt|auto] [--json]
-  aicrawl sync web --provider chatgpt|claude [--source <json-or-zip>] [--profile <dir> | --cdp-url <url>] [--browser <path>] [--remote-debugging-port 0] [--capture <network.json>] [--max-conversations 50] [--dry-run] [--json]
-  aicrawl schedule launchd --provider chatgpt|claude [--cdp-url <url> | --profile <dir>] [--browser <path>] [--remote-debugging-port 0] [--interval-minutes 15] [--max-conversations 50] [--out <plist>] [--json]
+  aicrawl sync web --provider chatgpt|claude [--source <json-or-zip>] [--profile <dir> | --cdp-url <url>] [--browser <path>] [--remote-debugging-port 0] [--capture <network.json>] [--chatgpt-app-cache <dir>] [--max-conversations 50] [--dry-run] [--json]
+  aicrawl schedule launchd --provider chatgpt|claude [--cdp-url <url> | --profile <dir>] [--browser <path>] [--remote-debugging-port 0] [--chatgpt-app-cache <dir>] [--interval-minutes 15] [--max-conversations 50] [--out <plist>] [--json]
   aicrawl conversations [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|cursor|hermes|all] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit 50]
   aicrawl messages --conversation <id> [--path current|all] [--around <message-id>] [--context 5 | --before N --after N]
   aicrawl search <query> [--group messages|conversations] [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|cursor|hermes|all] [--scope visible|transcript|attachments|internal|all] [--role user|assistant|system|developer|tool|attachment|unknown|all] [--path current|all] [--sort relevance|recent] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit 25]
@@ -127,6 +127,7 @@ aicrawl sync web --provider chatgpt --dry-run --json
 aicrawl sync web --provider chatgpt --source ./chatgpt-web-conversation.json
 aicrawl sync web --provider claude --source ./claude-web-conversation.json --json
 aicrawl sync web --provider chatgpt --cdp-url http://127.0.0.1:9222 --max-conversations 50 --json
+aicrawl sync web --provider chatgpt --cdp-url http://127.0.0.1:9222 --chatgpt-app-cache "$HOME/Library/Application Support/com.openai.chat" --max-conversations 50 --json
 aicrawl sync web --provider chatgpt --profile ~/.cache/aicrawl/browser-profiles/chatgpt --max-conversations 50 --json
 aicrawl sync web --provider claude --profile ~/.cache/aicrawl/browser-profiles/claude --dry-run
 aicrawl sync web --provider chatgpt --cdp-url http://127.0.0.1:9222 --capture ./chatgpt-network.json --dry-run --json
@@ -135,6 +136,8 @@ aicrawl sync web --provider chatgpt --cdp-url http://127.0.0.1:9222 --capture ./
 With `--source`, the command imports captured provider conversation detail payloads into the local archive using source kinds `chatgpt_web` or `claude_web`. Imports are idempotent by source kind, provider, and source hash.
 
 With `--cdp-url` and no `--source`, non-dry-run mode attaches to an already running browser's Chrome DevTools endpoint, finds or opens a provider page target, and runs same-origin `fetch()` calls from that page context. Authentication stays inside the browser profile. The fetched detail batch is written to a private temporary cache file, imported through the normal archive path, then removed. When the provider list/detail payloads expose update timestamps, live sync records a `provider_updated_at` cursor and later runs skip older list candidates. A no-change live sync updates `last_checked_at` and exits successfully without fetching detail payloads or writing archive rows.
+
+With `--chatgpt-app-cache <dir>`, ChatGPT live sync discovers conversation IDs from native ChatGPT macOS app cache files named `conversations-v3-*/*.data` and fetches those exact details through the attached or launched authenticated ChatGPT web page. This is useful when the native app has local conversation IDs that may not fit inside a small recent-list window. The scanner reads filenames and modification times only; it does not read, decode, print, or import opaque `.data` cache bodies. This option is ChatGPT-only and cannot be combined with `--source`.
 
 Individual conversation detail responses that return 403, 404, or 410 are skipped so one deleted, archived, or inaccessible provider conversation does not block the rest of the batch. These observations are recorded in `conversation_sync_status` with `status = inaccessible` and the HTTP status; existing archived rows are not deleted. Successful imports record the conversation status as `seen`.
 
@@ -146,7 +149,7 @@ With `--dry-run`, the command does not write the archive. It reports:
 
 - `auth_state`: whether a dedicated browser profile exists, a CDP target is configured, or login is still required.
 - `endpoint_contract_state`: `matched`, `partial`, `stale`, `missing`, `empty`, or `not_checked` for a redacted network capture.
-- `source`: candidate conversation, message, attachment, and warning counts. With `--source`, `source.kind` is `captured_payload` and counts parsed detail payloads. With `--cdp-url`, no `--source`, and an already open provider page target, `source.kind` is `live_list` and counts list-only candidate conversations without fetching detail payloads. If the CDP endpoint is reachable but candidate inspection cannot attach to a provider page, dry-run still returns a report with `source.kind` as `live_list_unavailable` and a warning.
+- `source`: candidate conversation, message, attachment, and warning counts. With `--source`, `source.kind` is `captured_payload` and counts parsed detail payloads. With `--chatgpt-app-cache`, `source.kind` is `chatgpt_app_cache_ids` and counts filename-derived conversation IDs without reading cache bodies or fetching detail payloads. With `--cdp-url`, no `--source`, and an already open provider page target, `source.kind` is `live_list` and counts list-only candidate conversations without fetching detail payloads. If the CDP endpoint is reachable but candidate inspection cannot attach to a provider page, dry-run still returns a report with `source.kind` as `live_list_unavailable` and a warning.
 - `freshness`: whether the archive has seen `chatgpt_web` or `claude_web` sync rows.
 
 `--capture` accepts a JSON browser network export or similar structured event dump. Only request URLs, methods, and status codes are inspected. Query strings, fragments, headers, cookies, and bearer tokens are not emitted in the report. In non-dry-run mode, a non-matched capture blocks before archive writes with a stable error prefix such as `contract_stale`, `contract_partial`, `contract_missing`, or `contract_empty`.
@@ -161,6 +164,7 @@ Writes a macOS LaunchAgent plist for recurring bounded web sync. The command doe
 
 ```bash
 aicrawl schedule launchd --provider chatgpt --cdp-url http://127.0.0.1:9222 --interval-minutes 15
+aicrawl schedule launchd --provider chatgpt --cdp-url http://127.0.0.1:9222 --chatgpt-app-cache "$HOME/Library/Application Support/com.openai.chat" --interval-minutes 15
 aicrawl schedule launchd --provider chatgpt --profile ~/.cache/aicrawl/browser-profiles/chatgpt --interval-minutes 15
 aicrawl schedule launchd --provider claude --cdp-url http://127.0.0.1:9222 --max-conversations 25 --out ~/Library/LaunchAgents/com.openclaw.aicrawl.sync.claude.plist --json
 ```
@@ -172,7 +176,7 @@ aicrawl sync web --provider <provider> --cdp-url <url> --max-conversations <n> -
 aicrawl sync web --provider <provider> --profile <dir> --max-conversations <n> --json
 ```
 
-It stores the CDP URL or profile path and normal command arguments, but no cookies, bearer tokens, session headers, or browser storage. For `--profile`, the first run may open the browser and require a normal interactive login. Then load the plist when ready:
+For ChatGPT, the generated plist can include `--chatgpt-app-cache <dir>` so recurring sync discovers native macOS app cache conversation IDs before fetching details through the authenticated web page. It stores the CDP URL or profile path and normal command arguments, but no cookies, bearer tokens, session headers, or browser storage. For `--profile`, the first run may open the browser and require a normal interactive login. Then load the plist when ready:
 
 ```bash
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.openclaw.aicrawl.sync.chatgpt.plist

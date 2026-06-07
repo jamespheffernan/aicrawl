@@ -17,6 +17,7 @@ type launchdResult struct {
 	ProfilePath         string   `json:"profile_path,omitempty"`
 	BrowserPath         string   `json:"browser_path,omitempty"`
 	RemoteDebuggingPort int      `json:"remote_debugging_port,omitempty"`
+	ChatGPTAppCachePath string   `json:"chatgpt_app_cache_path,omitempty"`
 	IntervalSeconds     int      `json:"interval_seconds"`
 	MaxConversations    int      `json:"max_conversations"`
 	ProgramArguments    []string `json:"program_arguments"`
@@ -31,7 +32,7 @@ func (a *App) schedule(ctx context.Context, globals globalOptions, args []string
 }
 
 func (a *App) scheduleLaunchd(ctx context.Context, globals globalOptions, args []string) error {
-	parsed, err := parseOptions(args, boolSet("json"), valueSet("provider", "cdp-url", "profile", "browser", "remote-debugging-port", "interval-minutes", "max-conversations", "out", "aicrawl-bin", "label"))
+	parsed, err := parseOptions(args, boolSet("json"), valueSet("provider", "cdp-url", "profile", "browser", "remote-debugging-port", "chatgpt-app-cache", "interval-minutes", "max-conversations", "out", "aicrawl-bin", "label"))
 	if err != nil {
 		return withExitCode(2, err)
 	}
@@ -41,6 +42,13 @@ func (a *App) scheduleLaunchd(ctx context.Context, globals globalOptions, args [
 	provider, err := webProvider(parsed.values["provider"])
 	if err != nil {
 		return withExitCode(2, err)
+	}
+	chatGPTAppCachePath := strings.TrimSpace(parsed.values["chatgpt-app-cache"])
+	if chatGPTAppCachePath != "" {
+		if provider != "chatgpt" {
+			return withExitCode(2, fmt.Errorf("--chatgpt-app-cache is only supported with --provider chatgpt"))
+		}
+		chatGPTAppCachePath = expandPath(chatGPTAppCachePath)
 	}
 	cdpURL := strings.TrimSpace(parsed.values["cdp-url"])
 	intervalMinutes, err := parsePositiveOption("interval-minutes", parsed.values["interval-minutes"], 15)
@@ -111,6 +119,9 @@ func (a *App) scheduleLaunchd(ctx context.Context, globals globalOptions, args [
 			programArgs = append(programArgs, "--remote-debugging-port", fmt.Sprint(remoteDebuggingPort))
 		}
 	}
+	if chatGPTAppCachePath != "" {
+		programArgs = append(programArgs, "--chatgpt-app-cache", chatGPTAppCachePath)
+	}
 	nextSteps := []string{"Load the LaunchAgent with launchctl when you are ready."}
 	if cdpURL != "" {
 		nextSteps = append([]string{"Keep the browser running with remote debugging enabled at the configured CDP URL."}, nextSteps...)
@@ -128,6 +139,7 @@ func (a *App) scheduleLaunchd(ctx context.Context, globals globalOptions, args [
 		ProfilePath:         profilePath,
 		BrowserPath:         browserPath,
 		RemoteDebuggingPort: remoteDebuggingPort,
+		ChatGPTAppCachePath: chatGPTAppCachePath,
 		IntervalSeconds:     intervalMinutes * 60,
 		MaxConversations:    maxConversations,
 		ProgramArguments:    append([]string(nil), programArgs...),

@@ -67,6 +67,9 @@ cp ./testdata/redacted/codex-session.fixture.jsonl "$SMOKE/codex-root/session.js
 "$BIN" import ./testdata/redacted/claude-export.fixture.zip --provider claude --json
 "$BIN" import ./testdata/redacted/chatgpt-export.fixture.zip --provider chatgpt --json
 "$BIN" sync web --provider chatgpt --source ./testdata/redacted/chatgpt-web-conversation.fixture.json --dry-run --json
+mkdir -p "$SMOKE/chatgpt-app-cache/conversations-v3-fixture"
+touch "$SMOKE/chatgpt-app-cache/conversations-v3-fixture/chatgpt-fixture-cache-id.data"
+"$BIN" sync web --provider chatgpt --chatgpt-app-cache "$SMOKE/chatgpt-app-cache" --dry-run --json
 "$BIN" status --json
 "$BIN" conversations --limit 10
 "$BIN" messages --conversation chatgpt:chatgpt-conv-branchy --path all
@@ -99,6 +102,12 @@ scripts/live-provider-smoke.sh --provider chatgpt --cdp-url http://127.0.0.1:922
 scripts/live-provider-smoke.sh --provider claude --cdp-url http://127.0.0.1:9223 --mode dry-run
 ```
 
+Optional ChatGPT macOS app-cache ID dry-run smoke, only when a local native app cache exists. This discovers filename-derived IDs and must not read cache bodies or fetch detail payloads:
+
+```bash
+scripts/live-provider-smoke.sh --provider chatgpt --cdp-url http://127.0.0.1:9222 --chatgpt-app-cache "$HOME/Library/Application Support/com.openai.chat" --mode dry-run --max-conversations 10
+```
+
 Optional live-browser write smoke, only when a logged-in provider browser page is already open in a browser with a Chrome DevTools endpoint and it is acceptable to import one real recent conversation into the isolated temp-home archive:
 
 ```bash
@@ -112,6 +121,8 @@ Prefer the scripted aggregate-only form for handoff notes:
 scripts/live-provider-smoke.sh --provider chatgpt --cdp-url http://127.0.0.1:9222 --mode write --max-conversations 1
 scripts/live-provider-smoke.sh --provider claude --cdp-url http://127.0.0.1:9223 --mode write --max-conversations 1
 ```
+
+For ChatGPT app-cache-seeded write proof, add `--chatgpt-app-cache "$HOME/Library/Application Support/com.openai.chat"` to the ChatGPT smoke command.
 
 Optional profile-launch smoke, only when Chrome/Chromium/Microsoft Edge is available and it is acceptable for the command to open a provider browser window:
 
@@ -127,6 +138,7 @@ Expected result:
 - Fixture re-imports report already-imported status.
 - Reconciliation reports missing and divergent counts without writing the archive.
 - Local transcript and captured web payload fixtures are searchable after import.
+- ChatGPT app-cache dry-run reports `source.kind = chatgpt_app_cache_ids` without creating an archive or reading cache bodies.
 - OpenClaw imports preserve redacted `sourceChannel` and sender metadata in structured conversation/message fields when present.
 - Directory imports and dry-runs skip control-only local transcript files with a redacted warning and cap warning arrays at 100 entries plus a truncation summary.
 - Directory dry-runs for local transcript providers report aggregate source counts without writing the archive or emitting private source paths.

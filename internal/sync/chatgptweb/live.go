@@ -8,6 +8,7 @@ import (
 	"math"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/openclaw/aicrawl/internal/timefmt"
@@ -30,9 +31,10 @@ type FetchResponse struct {
 }
 
 type LiveOptions struct {
-	MaxConversations int
-	PageSize         int
-	CursorAfter      string
+	MaxConversations    int
+	PageSize            int
+	CursorAfter         string
+	SeedConversationIDs []string
 }
 
 type LiveInspection struct {
@@ -67,6 +69,9 @@ func InspectLive(ctx context.Context, fetcher Fetcher, opts LiveOptions) (LiveIn
 		return LiveInspection{}, fmt.Errorf("ChatGPT live fetcher is required")
 	}
 	maxConversations := bounded(opts.MaxConversations, defaultMaxConversations, 1, 1000)
+	if len(opts.SeedConversationIDs) > 0 {
+		return LiveInspection{CandidateConversations: len(limitedUniqueIDs(opts.SeedConversationIDs, maxConversations))}, nil
+	}
 	pageSize := bounded(opts.PageSize, defaultPageSize, 1, 100)
 	seen := map[string]bool{}
 	inspection := LiveInspection{}
@@ -121,6 +126,9 @@ func FetchLiveWithCursor(ctx context.Context, fetcher Fetcher, opts LiveOptions)
 		return LiveResult{}, fmt.Errorf("ChatGPT live fetcher is required")
 	}
 	maxConversations := bounded(opts.MaxConversations, defaultMaxConversations, 1, 1000)
+	if len(opts.SeedConversationIDs) > 0 {
+		return fetchSeededDetails(ctx, fetcher, limitedUniqueIDs(opts.SeedConversationIDs, maxConversations))
+	}
 	pageSize := bounded(opts.PageSize, defaultPageSize, 1, 100)
 	var conversations []json.RawMessage
 	seen := map[string]bool{}
@@ -205,6 +213,72 @@ func FetchLiveWithCursor(ctx context.Context, fetcher Fetcher, opts LiveOptions)
 	result.Payload = marshalRawArray(conversations)
 	result.FetchedConversations = len(conversations)
 	return result, nil
+}
+
+func fetchSeededDetails(ctx context.Context, fetcher Fetcher, ids []string) (LiveResult, error) {
+	result := LiveResult{CandidateConversations: len(ids)}
+	var conversations []json.RawMessage
+	maxObservedAt := ""
+	for _, id := range ids {
+		detailURL := chatGPTOrigin + "/backend-api/conversation/" + url.PathEscape(id)
+		detailResp, err := fetcher.Fetch(ctx, detailURL)
+		if err != nil {
+			return LiveResult{}, fmt.Errorf("fetch ChatGPT conversation detail: %w", err)
+		}
+		if inaccessibleStatus(detailResp.Status) {
+			result.SkippedDetails = append(result.SkippedDetails, SkippedDetail{ID: id, Status: detailResp.Status})
+			continue
+		}
+		if !okStatus(detailResp.Status) {
+			return LiveResult{}, fmt.Errorf("fetch ChatGPT conversation detail returned HTTP status %d", detailResp.Status)
+		}
+		raw, err := unwrapConversation(detailResp.Body, "mapping")
+		if err != nil {
+			return LiveResult{}, fmt.Errorf("parse ChatGPT conversation detail: %w", err)
+		}
+		if detailAt := conversationTimestamp(raw, []string{"update_time", "updated_at", "create_time", "created_at"}); detailAt != "" && detailAt > maxObservedAt {
+			maxObservedAt = detailAt
+		}
+		conversations = append(conversations, raw)
+	}
+	if maxObservedAt != "" {
+		result.Cursor = LiveCursor{
+			Kind:           "provider_updated_at",
+			Value:          maxObservedAt,
+			At:             maxObservedAt,
+			CandidateCount: int64(result.CandidateConversations),
+		}
+	}
+	if len(result.SkippedDetails) > 0 {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("skipped %d inaccessible ChatGPT conversation details", len(result.SkippedDetails)))
+	}
+	if len(conversations) == 0 {
+		if len(result.SkippedDetails) > 0 {
+			result.NoChanges = true
+			return result, nil
+		}
+		return LiveResult{}, fmt.Errorf("ChatGPT live sync found no importable conversations")
+	}
+	result.Payload = marshalRawArray(conversations)
+	result.FetchedConversations = len(conversations)
+	return result, nil
+}
+
+func limitedUniqueIDs(ids []string, limit int) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, min(len(ids), limit))
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		out = append(out, id)
+		if len(out) >= limit {
+			break
+		}
+	}
+	return out
 }
 
 func extractConversationIDs(data []byte, arrayKeys ...string) ([]string, error) {

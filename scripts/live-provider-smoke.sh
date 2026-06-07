@@ -5,6 +5,7 @@ usage() {
   cat <<'EOF'
 Usage:
   scripts/live-provider-smoke.sh --provider chatgpt|claude --cdp-url http://127.0.0.1:9222 [--mode dry-run|write]
+  scripts/live-provider-smoke.sh --provider chatgpt --cdp-url http://127.0.0.1:9222 --chatgpt-app-cache ~/Library/Application\ Support/com.openai.chat [--mode dry-run|write]
   scripts/live-provider-smoke.sh --provider chatgpt|claude --profile /path/to/profile [--browser /path/to/browser] [--mode dry-run|write]
 
 Options:
@@ -13,6 +14,7 @@ Options:
   --profile <dir>             Dedicated browser profile path for profile-launch smoke.
   --browser <path>            Browser executable for profile-launch smoke.
   --remote-debugging-port <n> Remote debugging port for profile-launch smoke.
+  --chatgpt-app-cache <dir>   ChatGPT macOS app cache root; discovers conversation IDs from filenames only.
   --max-conversations <n>     Bounded candidate/detail count. Default: 1.
   --mode <dry-run|write>      dry-run counts list candidates; write imports bounded details into temp archive. Default: dry-run.
   --keep-output               Keep temp HOME and JSON output; prints the temp path.
@@ -28,6 +30,7 @@ cdp_url=""
 profile=""
 browser=""
 remote_debugging_port=""
+chatgpt_app_cache=""
 max_conversations="1"
 mode="dry-run"
 keep_output="0"
@@ -52,6 +55,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --remote-debugging-port)
       remote_debugging_port="${2:-}"
+      shift 2
+      ;;
+    --chatgpt-app-cache)
+      chatgpt_app_cache="${2:-}"
       shift 2
       ;;
     --max-conversations)
@@ -103,6 +110,10 @@ if [[ -z "$cdp_url" && -z "$profile" ]]; then
   echo "either --cdp-url or --profile is required" >&2
   exit 2
 fi
+if [[ -n "$chatgpt_app_cache" && "$provider" != "chatgpt" ]]; then
+  echo "--chatgpt-app-cache is only supported with --provider chatgpt" >&2
+  exit 2
+fi
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$script_dir/.." && pwd)"
@@ -143,6 +154,9 @@ if [[ -n "$browser" ]]; then
 fi
 if [[ -n "$remote_debugging_port" ]]; then
   cmd+=(--remote-debugging-port "$remote_debugging_port")
+fi
+if [[ -n "$chatgpt_app_cache" ]]; then
+  cmd+=(--chatgpt-app-cache "$chatgpt_app_cache")
 fi
 if [[ "$mode" == "dry-run" ]]; then
   cmd+=(--dry-run)

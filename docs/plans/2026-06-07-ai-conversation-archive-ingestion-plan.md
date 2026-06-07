@@ -24,6 +24,7 @@ Official exports are too slow for keeping a private AI-chat database current, an
 ### Web And Product Sources
 
 - R1. Sync ChatGPT web conversations through an authenticated browser profile, using same-origin app data calls observed from the live web app.
+- R1a. Cover native ChatGPT macOS app usage by discovering conversation IDs from local app cache filenames and fetching those exact details through the authenticated ChatGPT web sync path, without decoding opaque app cache bodies.
 - R2. Sync Claude web conversations through an authenticated browser profile, using same-origin app data calls observed from the live web app.
 - R3. Keep browser authentication inside the browser profile; do not export cookies, bearer tokens, session tokens, or auth headers into config files.
 - R4. Use official ChatGPT and Claude exports as periodic reconciliation to fill gaps, detect missing conversations, and validate parser fidelity.
@@ -66,6 +67,7 @@ flowchart TB
     jsonl["OpenClaw / Codex JSONL"]
     gemini["Gemini CLI JSON"]
     localdb["Cursor store.db / state.vscdb"]
+    chatgpt_app["ChatGPT app cache IDs"]
   end
 
   profile --> webapp --> discover --> same_origin --> web_adapter
@@ -73,6 +75,7 @@ flowchart TB
   jsonl --> parser
   gemini --> parser
   localdb --> parser
+  chatgpt_app --> same_origin
   web_adapter --> archive_contract["archive.Conversation contract"]
   parser --> archive_contract
   archive_contract --> sqlite["SQLite archive + FTS5"]
@@ -189,6 +192,7 @@ Web sync should add a browser-orchestrated acquisition layer in front of the exi
 ## Acceptance Examples
 
 - AE1. Given Jimmy is logged into ChatGPT in the dedicated browser profile, when `aicrawl sync web --provider chatgpt` runs, then new and recently updated conversations are imported without requesting an official export.
+- AE1a. Given Jimmy's native ChatGPT macOS app has local `conversations-v3-*/*.data` cache entries and a logged-in ChatGPT CDP browser is available, when `aicrawl sync web --provider chatgpt --chatgpt-app-cache "$HOME/Library/Application Support/com.openai.chat"` runs, then those filename-derived conversation IDs are fetched through same-origin ChatGPT web detail calls and imported without reading native cache bodies.
 - AE2. Given Jimmy is logged into Claude in the dedicated browser profile, when `aicrawl sync web --provider claude` runs, then new and recently updated conversations are imported without requesting an official export.
 - AE3. Given the web endpoint contract has changed, when sync runs, then it fails with `contract_stale` and leaves the existing archive untouched.
 - AE4. Given an OpenClaw session JSONL fixture with user and assistant turns, when it is imported with `--provider openclaw`, then `aicrawl search` finds the visible text.
