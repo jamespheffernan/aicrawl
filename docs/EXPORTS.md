@@ -67,7 +67,7 @@ aicrawl reconcile imports/private/<chatgpt-export>.zip --provider chatgpt --json
 aicrawl reconcile imports/private/<claude-export>.zip --provider claude --json
 ```
 
-`reconcile` opens the existing archive read-only, streams the official export through the same parser used by `import`, and reports source, archived, and missing conversation/message counts. It does not write any archive rows. If the report shows missing coverage, run `aicrawl import` with the same export to backfill through the normal idempotent import path.
+`reconcile` opens the existing archive read-only, streams the official export through the same parser used by `import`, and reports source, archived, missing, and divergent conversation/message counts. Divergence means an existing archived message ID has a different normalized text projection than the export parser currently produces. It does not write any archive rows or emit message bodies. If the report shows missing or divergent coverage, run `aicrawl import` with the same export to backfill or refresh through the normal idempotent import path.
 
 ## v0.1 Non-Goals
 

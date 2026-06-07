@@ -365,6 +365,49 @@ func TestReconcileOfficialExportReportsMissingAndArchivedRows(t *testing.T) {
 	}
 }
 
+func TestReconcileOfficialExportReportsDivergentMessages(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+	dataHome := filepath.Join(home, ".local", "share")
+	t.Setenv("XDG_DATA_HOME", dataHome)
+
+	fixturePath := filepath.Join("..", "..", "testdata", "redacted", "chatgpt-export.fixture.json")
+	var stdout bytes.Buffer
+	cli := New()
+	cli.stdout = &stdout
+	if err := cli.Run(context.Background(), []string{"import", fixturePath, "--provider", "chatgpt", "--json"}); err != nil {
+		t.Fatalf("import fixture: %v", err)
+	}
+	db, err := sql.Open("sqlite", filepath.Join(dataHome, "aicrawl", "aicrawl.db"))
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	defer db.Close()
+	if _, err := db.ExecContext(context.Background(), `update messages set text = 'divergent projection text' where id = (select id from messages order by id limit 1)`); err != nil {
+		t.Fatalf("mutate message text: %v", err)
+	}
+	stdout.Reset()
+
+	if err := cli.Run(context.Background(), []string{"reconcile", fixturePath, "--provider", "chatgpt", "--json"}); err != nil {
+		t.Fatalf("reconcile divergent: %v", err)
+	}
+	var report reconcileReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode divergent report: %v", err)
+	}
+	if report.MissingConversations != 0 || report.MissingMessages != 0 {
+		t.Fatalf("missing coverage = %+v, want none", report)
+	}
+	if report.DivergentMessages != 1 {
+		t.Fatalf("divergent messages = %d, want 1 in %+v", report.DivergentMessages, report)
+	}
+	if report.NextStep == "" {
+		t.Fatalf("next step is empty for divergent rows")
+	}
+}
+
 func TestImportStreamsLargeConversationArray(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

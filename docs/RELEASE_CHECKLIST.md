@@ -101,6 +101,7 @@ Expected result:
 
 - JSON commands emit valid JSON.
 - Fixture re-imports report already-imported status.
+- Reconciliation reports missing and divergent counts without writing the archive.
 - Local transcript and captured web payload fixtures are searchable after import.
 - Directory dry-runs for local transcript providers report aggregate source counts without writing the archive or emitting private source paths.
 - `status --json` reports `web_sync` freshness for ChatGPT and Claude web source kinds.

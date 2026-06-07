@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/openclaw/aicrawl/internal/archive"
+	"github.com/openclaw/aicrawl/internal/textnorm"
 )
 
 type reconcileReport struct {
@@ -17,6 +18,7 @@ type reconcileReport struct {
 	SourceMessages        int      `json:"source_messages"`
 	ArchivedMessages      int      `json:"archived_messages"`
 	MissingMessages       int      `json:"missing_messages"`
+	DivergentMessages     int      `json:"divergent_messages"`
 	Warnings              []string `json:"warnings,omitempty"`
 	NextStep              string   `json:"next_step,omitempty"`
 }
@@ -48,12 +50,13 @@ func (a *App) reconcile(ctx context.Context, globals globalOptions, args []strin
 	if globals.format == "json" || parsed.bools["json"] {
 		return writeJSON(a.stdout, report)
 	}
-	if err := writeTextLine(a.stdout, "%s reconciliation: %d/%d conversations archived, %d/%d messages archived",
+	if err := writeTextLine(a.stdout, "%s reconciliation: %d/%d conversations archived, %d/%d messages archived, %d divergent messages",
 		report.Provider,
 		report.ArchivedConversations,
 		report.SourceConversations,
 		report.ArchivedMessages,
 		report.SourceMessages,
+		report.DivergentMessages,
 	); err != nil {
 		return err
 	}
@@ -79,12 +82,15 @@ func reconcileSource(ctx context.Context, db *sql.DB, path, provider string) (re
 			report.MissingConversations++
 		}
 		for _, message := range conversation.Messages {
-			exists, err := rowExists(ctx, db, `select 1 from messages where id = ? limit 1`, message.ID)
+			archivedText, exists, err := messageText(ctx, db, message.ID)
 			if err != nil {
 				return err
 			}
 			if exists {
 				report.ArchivedMessages++
+				if archivedText != textnorm.Normalize(message.Text) {
+					report.DivergentMessages++
+				}
 			} else {
 				report.MissingMessages++
 			}
@@ -96,10 +102,22 @@ func reconcileSource(ctx context.Context, db *sql.DB, path, provider string) (re
 	}
 	report.Provider = header.Provider
 	report.SourceKind = header.SourceKind
-	if report.MissingConversations > 0 || report.MissingMessages > 0 {
-		report.NextStep = "Run `aicrawl import` with this official export to backfill missing archive rows."
+	if report.MissingConversations > 0 || report.MissingMessages > 0 || report.DivergentMessages > 0 {
+		report.NextStep = "Run `aicrawl import` with this official export to backfill missing rows and refresh divergent message projections."
 	}
 	return report, nil
+}
+
+func messageText(ctx context.Context, db *sql.DB, id string) (string, bool, error) {
+	var text string
+	err := db.QueryRowContext(ctx, `select text from messages where id = ? limit 1`, id).Scan(&text)
+	if err == nil {
+		return text, true, nil
+	}
+	if err == sql.ErrNoRows {
+		return "", false, nil
+	}
+	return "", false, err
 }
 
 func rowExists(ctx context.Context, db *sql.DB, query, id string) (bool, error) {

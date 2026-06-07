@@ -113,7 +113,7 @@ aicrawl reconcile ./claude-export.zip --provider claude
 aicrawl reconcile ./export.zip --provider auto --json
 ```
 
-The report includes source conversation/message counts, archived conversation/message counts, missing counts, parser warnings, and a next step when backfill is needed. If rows are missing, run `aicrawl import` with the same official export to backfill through the normal idempotent import path.
+The report includes source conversation/message counts, archived conversation/message counts, missing counts, divergent message projection counts, parser warnings, and a next step when backfill or refresh is needed. If rows are missing or divergent, run `aicrawl import` with the same official export to backfill or refresh through the normal idempotent import path. Reconciliation compares normalized stored message text and never emits message bodies.
 
 ## `sync web`
 
