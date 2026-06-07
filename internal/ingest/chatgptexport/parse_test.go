@@ -220,6 +220,41 @@ func TestMissingIDsUseHashFallbackWithWarnings(t *testing.T) {
 	}
 }
 
+func TestConversationIDFieldIsStableRawID(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "conversation-id.fixture.json")
+	data := `[
+  {
+    "conversation_id": "web-detail-conversation-id",
+    "title": "conversation id field",
+    "current_node": "node-key",
+    "mapping": {
+      "node-key": {
+        "id": "node-key",
+        "parent": null,
+        "children": [],
+        "message": {"author": {"role": "assistant"}, "content": {"parts": ["conversation id field text"]}}
+      }
+    }
+  }
+]`
+	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+	parsed, err := chatgptexport.ParseFile(path)
+	if err != nil {
+		t.Fatalf("ParseFile: %v", err)
+	}
+	conversation := parsed.Conversations[0]
+	if conversation.RawID != "web-detail-conversation-id" || conversation.ID != "chatgpt:web-detail-conversation-id" {
+		t.Fatalf("conversation id = %q/%q, want conversation_id field", conversation.ID, conversation.RawID)
+	}
+	for _, warning := range parsed.Warnings {
+		if strings.Contains(warning, "missing chatgpt conversation id") {
+			t.Fatalf("warnings = %#v, did not want conversation id fallback warning", parsed.Warnings)
+		}
+	}
+}
+
 func TestMissingCurrentPathParentIsNotMarkedKnown(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "missing-parent.fixture.json")
 	data := `[

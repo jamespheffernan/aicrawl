@@ -31,6 +31,10 @@ type Response struct {
 	Body   []byte
 }
 
+type FetchOptions struct {
+	BearerTokenFromAuthSession bool
+}
+
 type targetInfo struct {
 	Type                 string `json:"type"`
 	URL                  string `json:"url"`
@@ -102,6 +106,10 @@ func (s *Session) Close(status websocket.StatusCode, reason string) error {
 }
 
 func (s *Session) Fetch(ctx context.Context, requestURL string) (Response, error) {
+	return s.FetchWithOptions(ctx, requestURL, FetchOptions{})
+}
+
+func (s *Session) FetchWithOptions(ctx context.Context, requestURL string, opts FetchOptions) (Response, error) {
 	if s == nil || s.conn == nil {
 		return Response{}, fmt.Errorf("CDP session is not open")
 	}
@@ -112,14 +120,34 @@ func (s *Session) Fetch(ctx context.Context, requestURL string) (Response, error
 	if err != nil {
 		return Response{}, fmt.Errorf("encode fetch URL: %w", err)
 	}
+	authSessionLiteral, err := json.Marshal(opts.BearerTokenFromAuthSession)
+	if err != nil {
+		return Response{}, fmt.Errorf("encode fetch auth option: %w", err)
+	}
 	expression := fmt.Sprintf(`(async () => {
+  const headers = {"accept": "application/json"};
+  if (%s) {
+    try {
+      const authResponse = await fetch("/api/auth/session", {
+        credentials: "include",
+        headers: {"accept": "application/json"}
+      });
+      if (authResponse.ok) {
+        const auth = await authResponse.json();
+        const token = auth && (auth.accessToken || auth.sessionToken);
+        if (token) {
+          headers.Authorization = "Bearer " + token;
+        }
+      }
+    } catch (_) {}
+  }
   const response = await fetch(%s, {
     credentials: "include",
-    headers: {"accept": "application/json"}
+    headers
   });
   const text = await response.text();
   return {status: response.status, url: response.url, text};
-})()`, string(urlLiteral))
+})()`, string(authSessionLiteral), string(urlLiteral))
 	s.nextID++
 	id := s.nextID
 	req := command{

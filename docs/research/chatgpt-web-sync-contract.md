@@ -4,6 +4,8 @@ Observed date: 2026-06-07
 
 The live ChatGPT path uses an attached Chrome DevTools target for `https://chatgpt.com` and runs same-origin `fetch()` calls from that page context. Authentication stays in the browser profile.
 
+As of 2026-06-07, cookie-only page-context fetches are not enough for current ChatGPT backend detail reads: a visible conversation page can load successfully while a plain `fetch("/backend-api/conversation/<id>")` returns 404 and the history list returns no candidates. The working CDP contract hydrates the bearer token from same-origin `/api/auth/session` inside the logged-in page and adds it as an `Authorization` header on ChatGPT backend fetches. The token is not printed or persisted by aicrawl.
+
 ## Current Endpoint Assumptions
 
 List endpoint:

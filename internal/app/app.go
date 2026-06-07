@@ -1052,7 +1052,7 @@ type chatGPTCDPFetcher struct {
 }
 
 func (f chatGPTCDPFetcher) Fetch(ctx context.Context, requestURL string) (chatgptweb.FetchResponse, error) {
-	resp, err := f.session.Fetch(ctx, requestURL)
+	resp, err := f.session.FetchWithOptions(ctx, requestURL, cdp.FetchOptions{BearerTokenFromAuthSession: true})
 	if err != nil {
 		return chatgptweb.FetchResponse{}, err
 	}

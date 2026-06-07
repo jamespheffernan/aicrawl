@@ -35,6 +35,8 @@ scripts/live-provider-smoke.sh --provider claude --cdp-url http://127.0.0.1:9223
 
 Passing evidence is aggregate output with `source_kind live_list` and a candidate count, or a clear `live_list_unavailable` warning if the logged-in provider page is not attached. Do not paste raw JSON output into public issues or PRs.
 
+For ChatGPT, the CDP fetcher reads the browser session token from same-origin `/api/auth/session` and uses it as a bearer token for backend reads. This is expected: current ChatGPT pages can be visibly logged in while cookie-only synthetic fetches return empty lists or 404 detail responses.
+
 For native ChatGPT macOS app coverage, add the app cache root. This discovers conversation IDs from `conversations-v3-*/*.data` filenames only; dry-run does not read cache bodies or fetch detail payloads.
 
 ```bash

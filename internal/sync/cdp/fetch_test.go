@@ -91,6 +91,85 @@ func TestSessionFetchEvaluatesSameOriginRequest(t *testing.T) {
 	}
 }
 
+func TestSessionFetchWithAuthSessionBuildsBearerHeaderInPage(t *testing.T) {
+	var wsURL string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/json/list":
+			_ = json.NewEncoder(w).Encode([]map[string]any{{
+				"type":                 "page",
+				"url":                  "https://chatgpt.com/",
+				"webSocketDebuggerUrl": wsURL,
+			}})
+		case "/devtools/page/1":
+			conn, err := websocket.Accept(w, r, nil)
+			if err != nil {
+				t.Errorf("accept websocket: %v", err)
+				return
+			}
+			defer conn.Close(websocket.StatusNormalClosure, "")
+			_, data, err := conn.Read(context.Background())
+			if err != nil {
+				t.Errorf("read command: %v", err)
+				return
+			}
+			var cmd struct {
+				ID     int            `json:"id"`
+				Method string         `json:"method"`
+				Params map[string]any `json:"params"`
+			}
+			if err := json.Unmarshal(data, &cmd); err != nil {
+				t.Errorf("decode command: %v", err)
+				return
+			}
+			expression, _ := cmd.Params["expression"].(string)
+			for _, want := range []string{"/api/auth/session", "headers.Authorization", "Bearer \" + token"} {
+				if !strings.Contains(expression, want) {
+					t.Errorf("expression missing %q: %s", want, expression)
+				}
+			}
+			response := map[string]any{
+				"id": cmd.ID,
+				"result": map[string]any{
+					"result": map[string]any{
+						"type": "object",
+						"value": map[string]any{
+							"status": 200,
+							"url":    "https://chatgpt.com/backend-api/conversation/live",
+							"text":   `{"mapping":{}}`,
+						},
+					},
+				},
+			}
+			data, _ = json.Marshal(response)
+			if err := conn.Write(context.Background(), websocket.MessageText, data); err != nil {
+				t.Errorf("write response: %v", err)
+			}
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	wsURL = "ws" + strings.TrimPrefix(server.URL, "http") + "/devtools/page/1"
+
+	session, err := Open(context.Background(), Options{
+		Endpoint:       server.URL,
+		HomeURL:        "https://chatgpt.com/",
+		AllowedOrigins: []string{"https://chatgpt.com"},
+	})
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer session.Close(websocket.StatusNormalClosure, "")
+	resp, err := session.FetchWithOptions(context.Background(), "https://chatgpt.com/backend-api/conversation/live", FetchOptions{BearerTokenFromAuthSession: true})
+	if err != nil {
+		t.Fatalf("FetchWithOptions: %v", err)
+	}
+	if resp.Status != 200 || string(resp.Body) != `{"mapping":{}}` {
+		t.Fatalf("response = %+v", resp)
+	}
+}
+
 func TestSessionFetchReturnsProviderHTTPStatus(t *testing.T) {
 	var wsURL string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

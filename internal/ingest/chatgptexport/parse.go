@@ -209,7 +209,7 @@ func parseConversation(raw json.RawMessage, index int) (archive.Conversation, []
 		return archive.Conversation{}, nil, fmt.Errorf("parse chatgpt conversation %d: %w", index, err)
 	}
 	warnings := []string{}
-	rawID := stringField(object, "id")
+	rawID := firstStringField(object, "id", "conversation_id", "uuid")
 	if rawID == "" {
 		rawID = deterministicRawFallback("conversation", raw)
 		warnings = append(warnings, "missing chatgpt conversation id, used content hash fallback "+redactID(rawID))
@@ -487,6 +487,15 @@ func stringField(object map[string]json.RawMessage, key string) string {
 	var value string
 	if err := json.Unmarshal(raw, &value); err == nil {
 		return value
+	}
+	return ""
+}
+
+func firstStringField(object map[string]json.RawMessage, keys ...string) string {
+	for _, key := range keys {
+		if value := stringField(object, key); value != "" {
+			return value
+		}
 	}
 	return ""
 }
