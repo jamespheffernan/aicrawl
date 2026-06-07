@@ -210,9 +210,51 @@ func (a *App) status(ctx context.Context, globals globalOptions, args []string) 
 		}
 	}
 	if globals.format == "json" || parsed.bools["json"] {
-		return writeJSON(a.stdout, status)
+		return writeJSON(a.stdout, statusReport{
+			Status:  status,
+			WebSync: a.webSyncStatus(ctx, rt),
+		})
 	}
 	return writeTextLine(a.stdout, "%s", status.Summary)
+}
+
+type statusReport struct {
+	control.Status
+	WebSync []statusWebSync `json:"web_sync,omitempty"`
+}
+
+type statusWebSync struct {
+	Provider          string `json:"provider"`
+	SourceKind        string `json:"source_kind"`
+	State             string `json:"state"`
+	LastImportID      string `json:"last_import_id,omitempty"`
+	LastImportAt      string `json:"last_import_at,omitempty"`
+	ConversationCount int64  `json:"conversation_count,omitempty"`
+	MessageCount      int64  `json:"message_count,omitempty"`
+}
+
+func (a *App) webSyncStatus(ctx context.Context, rt runtime) []statusWebSync {
+	providers := []struct {
+		provider   string
+		sourceKind string
+	}{
+		{provider: "chatgpt", sourceKind: "chatgpt_web"},
+		{provider: "claude", sourceKind: "claude_web"},
+	}
+	statuses := make([]statusWebSync, 0, len(providers))
+	for _, provider := range providers {
+		freshness := a.webFreshness(ctx, rt, provider.sourceKind)
+		statuses = append(statuses, statusWebSync{
+			Provider:          provider.provider,
+			SourceKind:        freshness.SourceKind,
+			State:             freshness.State,
+			LastImportID:      freshness.LastImportID,
+			LastImportAt:      freshness.LastImportAt,
+			ConversationCount: freshness.ConversationCount,
+			MessageCount:      freshness.MessageCount,
+		})
+	}
+	return statuses
 }
 
 type doctorReport struct {

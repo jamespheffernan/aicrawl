@@ -593,6 +593,51 @@ func TestSyncWebSourceImportsSearchablePayloadAndIsIdempotent(t *testing.T) {
 	if report.Source.Conversations != 1 || report.Source.Messages != 3 {
 		t.Fatalf("source counts = %+v, want 1/3", report.Source)
 	}
+	stdout.Reset()
+
+	if err := cli.Run(context.Background(), []string{"status", "--json"}); err != nil {
+		t.Fatalf("status after web sync: %v", err)
+	}
+	var status struct {
+		State   string `json:"state"`
+		WebSync []struct {
+			Provider          string `json:"provider"`
+			SourceKind        string `json:"source_kind"`
+			State             string `json:"state"`
+			LastImportAt      string `json:"last_import_at"`
+			ConversationCount int64  `json:"conversation_count"`
+			MessageCount      int64  `json:"message_count"`
+		} `json:"web_sync"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &status); err != nil {
+		t.Fatalf("decode status web sync: %v", err)
+	}
+	if status.State != "ok" {
+		t.Fatalf("status state = %q, want ok", status.State)
+	}
+	var chatgptStatus *struct {
+		Provider          string `json:"provider"`
+		SourceKind        string `json:"source_kind"`
+		State             string `json:"state"`
+		LastImportAt      string `json:"last_import_at"`
+		ConversationCount int64  `json:"conversation_count"`
+		MessageCount      int64  `json:"message_count"`
+	}
+	for i := range status.WebSync {
+		if status.WebSync[i].Provider == "chatgpt" {
+			chatgptStatus = &status.WebSync[i]
+			break
+		}
+	}
+	if chatgptStatus == nil {
+		t.Fatalf("status web_sync missing chatgpt: %+v", status.WebSync)
+	}
+	if chatgptStatus.SourceKind != "chatgpt_web" || chatgptStatus.State != "seen" || chatgptStatus.LastImportAt == "" {
+		t.Fatalf("chatgpt web status = %+v, want seen freshness", *chatgptStatus)
+	}
+	if chatgptStatus.ConversationCount != 1 || chatgptStatus.MessageCount != 3 {
+		t.Fatalf("chatgpt web counts = %+v, want 1/3", *chatgptStatus)
+	}
 }
 
 func TestImportLocalTranscriptSourcesAreSearchable(t *testing.T) {

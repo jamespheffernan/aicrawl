@@ -68,6 +68,8 @@ aicrawl status
 aicrawl status --json
 ```
 
+JSON output includes a `web_sync` array for `chatgpt_web` and `claude_web` with freshness state, last import timestamp, and synced conversation/message counts. This lets operators see stale or never-run web syncs from the normal status surface without running provider-specific dry-runs.
+
 ## `doctor`
 
 Checks config presence, CrawlBar manifest presence, database readability, schema version, and FTS availability. This command is read-only.

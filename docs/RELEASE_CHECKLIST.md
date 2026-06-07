@@ -63,6 +63,7 @@ Run:
 "$BIN" import ./testdata/redacted/claude-export.fixture.zip --provider claude --json
 "$BIN" import ./testdata/redacted/chatgpt-export.fixture.zip --provider chatgpt --json
 "$BIN" sync web --provider chatgpt --source ./testdata/redacted/chatgpt-web-conversation.fixture.json --dry-run --json
+"$BIN" status --json
 "$BIN" conversations --limit 10
 "$BIN" messages --conversation chatgpt:chatgpt-conv-branchy --path all
 "$BIN" search "openclaw jsonl fixture assistant phrase" --provider openclaw --json
@@ -98,6 +99,7 @@ Expected result:
 - JSON commands emit valid JSON.
 - Fixture re-imports report already-imported status.
 - Local transcript and captured web payload fixtures are searchable after import.
+- `status --json` reports `web_sync` freshness for ChatGPT and Claude web source kinds.
 - Reserved-term search succeeds.
 - Read-only SQL succeeds.
 - Mutating SQL is rejected.
