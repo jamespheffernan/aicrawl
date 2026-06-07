@@ -1,6 +1,6 @@
 # Architecture
 
-`aicrawl` is a local-first archive for official Claude and ChatGPT conversation exports. The v0.1 product is a CLI that imports local export ZIP/JSON files into SQLite, preserves the original JSON payloads, builds a normalized text index, and exposes read-only retrieval, search, SQL, Markdown export, and CrawlBar metadata.
+`aicrawl` is a local-first archive for Claude and ChatGPT conversation data. The v0.1 product is a CLI that imports local official export ZIP/JSON files and captured web conversation detail payloads into SQLite, preserves the original JSON payloads, builds a normalized text index, and exposes read-only retrieval, search, SQL, Markdown export, and CrawlBar metadata.
 
 ## User Workflow
 
@@ -10,6 +10,8 @@
 4. Run `aicrawl import <zip-or-json> --provider claude|chatgpt|auto`.
 5. Use `conversations`, `messages`, `search`, `sql`, or `export markdown` against the local archive.
 6. Optionally run `aicrawl crawlbar manifest` so CrawlBar can discover the local control surface.
+
+For captured web payloads, run `aicrawl sync web --provider chatgpt|claude --source <json-or-zip>`. Dry-run mode reports auth state, contract state, source counts, and freshness without writing.
 
 The importer does not delete source exports. Those files still contain private data after import.
 
@@ -26,7 +28,9 @@ internal/ingest/
 internal/sync/
   browser/                browser-profile and CDP preflight for web sync
   webdiscover/            redacted network capture contract discovery
-  websync/                web sync report model and privacy boundary
+  chatgptweb/             captured ChatGPT web payload adapter
+  claudeweb/              captured Claude web payload adapter
+  websync/                web sync report model, source counts, and privacy boundary
 internal/security/        ZIP safety, source size guards, private file handling helpers
 internal/textnorm/        searchable text normalization and safe FTS query construction
 testdata/redacted/        small synthetic fixtures only
@@ -58,12 +62,14 @@ flowchart LR
   BrowserProfile["Dedicated browser profile or CDP URL"] --> SessionPlan["browser session preflight"]
   NetworkCapture["Redacted network JSON capture"] --> ContractDiscovery["endpoint contract discovery"]
   ArchiveState["SQLite sync_state"] --> Freshness["freshness report"]
-  SessionPlan --> Report["sync web dry-run report"]
+  SourcePayload["Captured detail payload JSON/ZIP"] --> WebAdapter["web payload adapter"]
+  WebAdapter --> Archive["archive import transaction"]
+  SessionPlan --> Report["sync web report"]
   ContractDiscovery --> Report
   Freshness --> Report
 ```
 
-`aicrawl sync web` is the first browser-profile lane. It validates the intended auth boundary and reports whether a ChatGPT or Claude capture still exposes recognizable conversation list/detail calls. The command is read-only in v0.1: it does not drive a browser, copy auth material, call private product APIs, or write transcripts. It exists to make the contract and freshness state visible before provider-specific live sync adapters are allowed to write into the archive.
+`aicrawl sync web` is the first browser-profile lane. It validates the intended auth boundary and reports whether a ChatGPT or Claude capture still exposes recognizable conversation list/detail calls. With `--source`, it imports captured conversation detail payloads under `chatgpt_web` or `claude_web`; without `--source`, non-dry-run mode exits because live browser page-context fetching is not implemented yet.
 
 The network discovery parser consumes structured JSON captures, walks nested request objects, and emits only sanitized origins and paths. Query strings, fragments, headers, cookies, and authorization values are not included in the report.
 
@@ -101,7 +107,7 @@ FTS reserved words and operators such as `AND`, `OR`, `NOT`, `NEAR`, and `*` are
 
 ## Privacy Boundary
 
-`aicrawl` v0.1 imports official local exports and can run read-only web-sync preflight checks. It does not use session-token scraping, browser automation, live private product API transcript writes, cloud sync, embeddings, background watches, or network import/search/export. Import, sync preflight, search, SQL, Markdown export, and CrawlBar manifest generation are local operations.
+`aicrawl` v0.1 imports official local exports and captured web payload files, and can run read-only web-sync preflight checks. It does not use session-token scraping, live CDP/page-context fetching, browser automation, cloud sync, embeddings, background watches, or network import/search/export. Import, sync source import, sync preflight, search, SQL, Markdown export, and CrawlBar manifest generation are local operations.
 
 Private data should stay in ignored local paths such as `imports/private/`, platform runtime directories, SQLite files, logs, and generated Markdown export directories. Public fixtures must be synthetic or redacted.
 

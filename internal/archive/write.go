@@ -16,7 +16,7 @@ import (
 	"github.com/openclaw/aicrawl/internal/timefmt"
 )
 
-const privacyReminder = "Source export files contain private conversation data. aicrawl does not delete them after import."
+const privacyReminder = "Source files contain private conversation data. aicrawl does not delete them after import."
 
 type ConversationEmitter func(conversation Conversation, warnings []string) error
 

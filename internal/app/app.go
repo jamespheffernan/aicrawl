@@ -15,6 +15,8 @@ import (
 	"github.com/openclaw/aicrawl/internal/ingest/chatgptexport"
 	"github.com/openclaw/aicrawl/internal/ingest/claudeexport"
 	"github.com/openclaw/aicrawl/internal/sync/browser"
+	"github.com/openclaw/aicrawl/internal/sync/chatgptweb"
+	"github.com/openclaw/aicrawl/internal/sync/claudeweb"
 	"github.com/openclaw/aicrawl/internal/sync/webdiscover"
 	"github.com/openclaw/aicrawl/internal/sync/websync"
 	"github.com/openclaw/aicrawl/internal/timefmt"
@@ -91,7 +93,7 @@ Usage:
   aicrawl metadata [--json]
   aicrawl status [--json]
   aicrawl import <zip-or-json> [--provider claude|chatgpt|auto]
-  aicrawl sync web --provider chatgpt|claude [--profile <dir> | --cdp-url <url>] [--capture <network.json>] --dry-run [--json]
+  aicrawl sync web --provider chatgpt|claude [--source <json-or-zip>] [--profile <dir> | --cdp-url <url>] [--capture <network.json>] [--dry-run] [--json]
   aicrawl conversations [--provider claude|chatgpt|all] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit 50]
   aicrawl messages --conversation <id> [--path current|all] [--around <message-id>] [--context 5 | --before N --after N]
   aicrawl search <query> [--group messages|conversations] [--provider claude|chatgpt|all] [--scope visible|transcript|attachments|internal|all] [--role user|assistant|system|developer|tool|attachment|unknown|all] [--path current|all] [--sort relevance|recent] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit 25]
@@ -392,21 +394,26 @@ func (a *App) sync(ctx context.Context, globals globalOptions, args []string) er
 }
 
 func (a *App) syncWeb(ctx context.Context, globals globalOptions, args []string) error {
-	parsed, err := parseOptions(args, boolSet("json", "dry-run"), valueSet("provider", "profile", "cdp-url", "capture"))
+	parsed, err := parseOptions(args, boolSet("json", "dry-run"), valueSet("provider", "profile", "cdp-url", "capture", "source"))
 	if err != nil {
 		return withExitCode(2, err)
 	}
 	if len(parsed.positionals) != 0 {
 		return withExitCode(2, fmt.Errorf("sync web does not accept positional arguments"))
 	}
-	if !parsed.bools["dry-run"] {
-		return withExitCode(2, fmt.Errorf("sync web currently requires --dry-run while provider contracts are being discovered"))
-	}
 	provider, err := webProvider(parsed.values["provider"])
 	if err != nil {
 		return withExitCode(2, err)
 	}
-	rt, err := resolveRuntime(globals.configPath, false)
+	sourcePath := parsed.values["source"]
+	if sourcePath != "" {
+		sourcePath = expandPath(sourcePath)
+	}
+	dryRun := parsed.bools["dry-run"]
+	if !dryRun && sourcePath == "" {
+		return withExitCode(2, fmt.Errorf("sync web live browser fetch is not implemented yet; pass --source with captured provider payloads or use --dry-run"))
+	}
+	rt, err := resolveRuntime(globals.configPath, !dryRun)
 	if err != nil {
 		return err
 	}
@@ -441,8 +448,37 @@ func (a *App) syncWeb(ctx context.Context, globals globalOptions, args []string)
 		}
 		discovery = &report
 	}
+	if discovery != nil && discovery.State != "matched" && !dryRun {
+		return withExitCode(2, fmt.Errorf("endpoint contract is %s; refusing to sync captured web payloads", discovery.State))
+	}
 	freshness := a.webFreshness(ctx, rt, session.SourceKind)
-	report := websync.BuildReport(session, discovery, freshness, true)
+	var sourceStats *websync.SourceStats
+	if sourcePath != "" {
+		stats, err := inspectWebSource(sourcePath, provider)
+		if err != nil {
+			return err
+		}
+		sourceStats = &stats
+	}
+	if !dryRun {
+		ar, err := archive.Open(ctx, rt.DBPath)
+		if err != nil {
+			return err
+		}
+		defer ar.Close()
+		stats, err := syncWebSource(ctx, ar, sourcePath, provider)
+		if err != nil {
+			return err
+		}
+		if globals.format == "json" || parsed.bools["json"] {
+			return writeJSON(a.stdout, stats)
+		}
+		if err := writeTextLine(a.stdout, "synced %d conversations and %d messages from %s web payloads", stats.Conversations, stats.Messages, stats.Provider); err != nil {
+			return err
+		}
+		return writeTextLine(a.stdout, "%s", stats.PrivacyReminder)
+	}
+	report := websync.BuildReport(session, discovery, freshness, sourceStats, true)
 	if globals.format == "json" || parsed.bools["json"] {
 		return writeJSON(a.stdout, report)
 	}
@@ -455,6 +491,47 @@ func (a *App) syncWeb(ctx context.Context, globals globalOptions, args []string)
 		}
 	}
 	return nil
+}
+
+func inspectWebSource(path, provider string) (websync.SourceStats, error) {
+	stats := websync.SourceStats{Path: path}
+	emit := func(conversation archive.Conversation, warnings []string) error {
+		stats.Conversations++
+		stats.Messages += len(conversation.Messages)
+		stats.Attachments += len(conversation.Attachments)
+		stats.Warnings = append(stats.Warnings, warnings...)
+		return nil
+	}
+	switch provider {
+	case chatgptweb.Provider:
+		if _, err := chatgptweb.StreamFile(path, emit); err != nil {
+			return websync.SourceStats{}, err
+		}
+	case claudeweb.Provider:
+		if _, err := claudeweb.StreamFile(path, emit); err != nil {
+			return websync.SourceStats{}, err
+		}
+	default:
+		return websync.SourceStats{}, fmt.Errorf("unsupported web provider %q", provider)
+	}
+	return stats, nil
+}
+
+func syncWebSource(ctx context.Context, ar *archive.Archive, path, provider string) (archive.ImportStats, error) {
+	switch provider {
+	case chatgptweb.Provider:
+		return ar.ImportStream(ctx, path, chatgptweb.Provider, chatgptweb.SourceKind, func(emit archive.ConversationEmitter) error {
+			_, err := chatgptweb.StreamFile(path, emit)
+			return err
+		})
+	case claudeweb.Provider:
+		return ar.ImportStream(ctx, path, claudeweb.Provider, claudeweb.SourceKind, func(emit archive.ConversationEmitter) error {
+			_, err := claudeweb.StreamFile(path, emit)
+			return err
+		})
+	default:
+		return archive.ImportStats{}, fmt.Errorf("unsupported web provider %q", provider)
+	}
 }
 
 func (a *App) webFreshness(ctx context.Context, rt runtime, sourceKind string) websync.Freshness {

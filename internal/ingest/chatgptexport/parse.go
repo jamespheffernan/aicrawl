@@ -49,14 +49,22 @@ func ParseFile(path string) (archive.ParsedSource, error) {
 }
 
 func StreamFile(path string, emit archive.ConversationEmitter) (archive.ParsedSource, error) {
+	return streamFileWithSourceKind(path, "chatgpt_export", emit)
+}
+
+func StreamWebFile(path string, emit archive.ConversationEmitter) (archive.ParsedSource, error) {
+	return streamFileWithSourceKind(path, "chatgpt_web", emit)
+}
+
+func streamFileWithSourceKind(path, sourceKind string, emit archive.ConversationEmitter) (archive.ParsedSource, error) {
 	if emit == nil {
 		return archive.ParsedSource{}, fmt.Errorf("chatgpt stream callback is required")
 	}
-	parsed := archive.ParsedSource{Provider: "chatgpt", SourceKind: "chatgpt_export"}
+	parsed := archive.ParsedSource{Provider: "chatgpt", SourceKind: sourceKind}
 	var notChatGPT bool
 	var sawChatGPT bool
 	err := security.WalkJSONSources(path, func(name string, r io.Reader) error {
-		next, err := parseReader(r, emit)
+		next, err := parseReaderWithSourceKind(r, sourceKind, emit)
 		if err == nil {
 			parsed.Provider = next.Provider
 			parsed.SourceKind = next.SourceKind
@@ -97,7 +105,11 @@ func parseData(data []byte) (archive.ParsedSource, error) {
 }
 
 func parseReader(r io.Reader, emit archive.ConversationEmitter) (archive.ParsedSource, error) {
-	parsed := archive.ParsedSource{Provider: "chatgpt", SourceKind: "chatgpt_export"}
+	return parseReaderWithSourceKind(r, "chatgpt_export", emit)
+}
+
+func parseReaderWithSourceKind(r io.Reader, sourceKind string, emit archive.ConversationEmitter) (archive.ParsedSource, error) {
+	parsed := archive.ParsedSource{Provider: "chatgpt", SourceKind: sourceKind}
 	var sawConversation bool
 	br := bufio.NewReader(r)
 	streamed, err := jsonstream.ForEachTopLevelArrayValue(br, func(rawConversation json.RawMessage, index int) error {
@@ -124,10 +136,14 @@ func parseReader(r io.Reader, emit archive.ConversationEmitter) (archive.ParsedS
 	if err != nil {
 		return archive.ParsedSource{}, fmt.Errorf("read chatgpt JSON source: %w", err)
 	}
-	return parseDataTo(data, emit)
+	return parseDataToWithSourceKind(data, sourceKind, emit)
 }
 
 func parseDataTo(data []byte, emit archive.ConversationEmitter) (archive.ParsedSource, error) {
+	return parseDataToWithSourceKind(data, "chatgpt_export", emit)
+}
+
+func parseDataToWithSourceKind(data []byte, sourceKind string, emit archive.ConversationEmitter) (archive.ParsedSource, error) {
 	rawConversations, err := topLevelConversations(data)
 	if err != nil {
 		return archive.ParsedSource{}, err
@@ -135,7 +151,7 @@ func parseDataTo(data []byte, emit archive.ConversationEmitter) (archive.ParsedS
 	if !looksLikeChatGPT(rawConversations) {
 		return archive.ParsedSource{}, ErrNotChatGPT
 	}
-	parsed := archive.ParsedSource{Provider: "chatgpt", SourceKind: "chatgpt_export"}
+	parsed := archive.ParsedSource{Provider: "chatgpt", SourceKind: sourceKind}
 	for i, rawConversation := range rawConversations {
 		conversation, warnings, err := parseConversation(rawConversation, i)
 		if err != nil {

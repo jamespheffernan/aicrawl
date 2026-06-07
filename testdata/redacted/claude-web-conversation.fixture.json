@@ -1,0 +1,20 @@
+{
+  "uuid": "web-claude-conv-1",
+  "name": "Web Claude Fixture",
+  "created_at": "2025-10-09T08:53:20.000000Z",
+  "updated_at": "2025-10-09T08:54:20.000000Z",
+  "chat_messages": [
+    {
+      "uuid": "web-claude-user-1",
+      "sender": "human",
+      "created_at": "2025-10-09T08:53:21.000000Z",
+      "text": "web sync claude fixture user phrase"
+    },
+    {
+      "uuid": "web-claude-assistant-1",
+      "sender": "assistant",
+      "created_at": "2025-10-09T08:53:22.000000Z",
+      "content": [{"type": "text", "text": "web sync claude fixture assistant phrase"}]
+    }
+  ]
+}

@@ -14,6 +14,14 @@ type Freshness struct {
 	MessageCount      int64  `json:"message_count,omitempty"`
 }
 
+type SourceStats struct {
+	Path          string   `json:"path,omitempty"`
+	Conversations int      `json:"conversations"`
+	Messages      int      `json:"messages"`
+	Attachments   int      `json:"attachments"`
+	Warnings      []string `json:"warnings,omitempty"`
+}
+
 type Report struct {
 	Provider              string              `json:"provider"`
 	SourceKind            string              `json:"source_kind"`
@@ -26,12 +34,13 @@ type Report struct {
 	Session               browser.SessionPlan `json:"session"`
 	Discovery             *webdiscover.Report `json:"discovery,omitempty"`
 	Freshness             Freshness           `json:"freshness"`
+	Source                *SourceStats        `json:"source,omitempty"`
 	PrivacyBoundary       []string            `json:"privacy_boundary"`
 	NextActions           []string            `json:"next_actions,omitempty"`
 	Warnings              []string            `json:"warnings,omitempty"`
 }
 
-func BuildReport(session browser.SessionPlan, discovery *webdiscover.Report, freshness Freshness, dryRun bool) Report {
+func BuildReport(session browser.SessionPlan, discovery *webdiscover.Report, freshness Freshness, source *SourceStats, dryRun bool) Report {
 	mode := "preflight"
 	if dryRun {
 		mode = "dry_run"
@@ -52,6 +61,9 @@ func BuildReport(session browser.SessionPlan, discovery *webdiscover.Report, fre
 	if discovery == nil {
 		nextActions = append(nextActions, "Capture a redacted browser network export and pass it with --capture before enabling writes.")
 	}
+	if source != nil {
+		warnings = append(warnings, source.Warnings...)
+	}
 	if freshness.State == "never_synced" {
 		nextActions = append(nextActions, "No web sync cursor exists yet; the first write-capable sync should backfill recent conversations.")
 	}
@@ -67,6 +79,7 @@ func BuildReport(session browser.SessionPlan, discovery *webdiscover.Report, fre
 		Session:               session,
 		Discovery:             discovery,
 		Freshness:             freshness,
+		Source:                source,
 		PrivacyBoundary: []string{
 			"Do not persist cookies, bearer tokens, or request headers.",
 			"Keep browser authentication inside the browser profile or attached CDP target.",

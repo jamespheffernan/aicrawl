@@ -12,7 +12,7 @@ Usage:
   aicrawl metadata [--json]
   aicrawl status [--json]
   aicrawl import <zip-or-json> [--provider claude|chatgpt|auto]
-  aicrawl sync web --provider chatgpt|claude [--profile <dir> | --cdp-url <url>] [--capture <network.json>] --dry-run [--json]
+  aicrawl sync web --provider chatgpt|claude [--source <json-or-zip>] [--profile <dir> | --cdp-url <url>] [--capture <network.json>] [--dry-run] [--json]
   aicrawl conversations [--provider claude|chatgpt|all] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit 50]
   aicrawl messages --conversation <id> [--path current|all] [--around <message-id>] [--context 5 | --before N --after N]
   aicrawl search <query> [--group messages|conversations] [--provider claude|chatgpt|all] [--scope visible|transcript|attachments|internal|all] [--role user|assistant|system|developer|tool|attachment|unknown|all] [--path current|all] [--sort relevance|recent] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit 25]
@@ -85,25 +85,32 @@ aicrawl import ./chatgpt-export.zip --provider chatgpt
 aicrawl import ./export.zip --provider auto
 ```
 
-Provider defaults to auto-detection when omitted or set to `auto`. Imports are idempotent by source kind, provider, and source hash. Text output includes a reminder that source exports still contain private data.
+Provider defaults to auto-detection when omitted or set to `auto`. Imports are idempotent by source kind, provider, and source hash. Text output includes a reminder that source files still contain private data.
 
 ## `sync web`
 
-Runs the browser-profile preflight and optional redacted endpoint-contract discovery for ChatGPT or Claude web capture.
+Runs browser-profile preflight, optional redacted endpoint-contract discovery, and captured payload import for ChatGPT or Claude web data.
 
 ```bash
 aicrawl sync web --provider chatgpt --dry-run --json
+aicrawl sync web --provider chatgpt --source ./chatgpt-web-conversation.json
+aicrawl sync web --provider claude --source ./claude-web-conversation.json --json
 aicrawl sync web --provider claude --profile ~/.cache/aicrawl/browser-profiles/claude --dry-run
 aicrawl sync web --provider chatgpt --cdp-url http://127.0.0.1:9222 --capture ./chatgpt-network.json --dry-run --json
 ```
 
-This command is intentionally read-only in v0.1. It does not import transcripts or persist browser credentials. It reports:
+With `--source`, the command imports captured provider conversation detail payloads into the local archive using source kinds `chatgpt_web` or `claude_web`. Imports are idempotent by source kind, provider, and source hash.
+
+With `--dry-run`, the command does not write the archive. It reports:
 
 - `auth_state`: whether a dedicated browser profile exists, a CDP target is configured, or login is still required.
 - `endpoint_contract_state`: `matched`, `partial`, `stale`, `missing`, `empty`, or `not_checked` for a redacted network capture.
+- `source`: candidate conversation, message, attachment, and warning counts when `--source` is present.
 - `freshness`: whether the archive has seen `chatgpt_web` or `claude_web` sync rows.
 
 `--capture` accepts a JSON browser network export or similar structured event dump. Only request URLs, methods, and status codes are inspected. Query strings, fragments, headers, cookies, and bearer tokens are not emitted in the report.
+
+Live browser fetching through CDP/page-context calls is not enabled yet. Without `--source`, non-dry-run `sync web` exits with a usage error instead of pretending to sync.
 
 ## `conversations`
 

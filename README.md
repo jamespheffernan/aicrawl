@@ -1,6 +1,6 @@
 # aicrawl
 
-`aicrawl` is a local-first archive for personal AI conversation history. The v0.1 CLI imports official Claude and ChatGPT export ZIP/JSON files into a private SQLite archive, preserves raw JSON payloads, indexes searchable message and extracted attachment/file text with FTS5, and exports conversations as Markdown.
+`aicrawl` is a local-first archive for personal AI conversation history. The v0.1 CLI imports official Claude and ChatGPT export ZIP/JSON files plus captured ChatGPT and Claude web conversation payloads into a private SQLite archive, preserves raw JSON payloads, indexes searchable message and extracted attachment/file text with FTS5, and exports conversations as Markdown.
 
 The project follows the OpenClaw pattern: provider-specific parsing lives in `aicrawl`, while reusable local archive mechanics use `github.com/openclaw/crawlkit` where it fits.
 
@@ -18,6 +18,7 @@ GOWORK=off go build ./cmd/aicrawl
 aicrawl init
 aicrawl import ./claude-export.zip --provider claude
 aicrawl import ./chatgpt-export.zip --provider chatgpt
+aicrawl sync web --provider chatgpt --source ./chatgpt-web-conversation.json
 aicrawl sync web --provider chatgpt --dry-run --json
 aicrawl conversations --limit 25
 aicrawl messages --conversation <conversation-id> --path current
@@ -40,11 +41,12 @@ aicrawl doctor --json
 
 ## Supported Sources
 
-v0.1 supports local official export files plus an experimental web-sync preflight:
+v0.1 supports local official export files plus captured ChatGPT and Claude web conversation payloads:
 
 - Claude official export ZIPs or extracted JSON containing conversation data.
 - ChatGPT official export ZIPs or extracted JSON containing `conversations.json`, export batch JSON, or top-level conversations with `mapping`.
-- `aicrawl sync web --provider chatgpt|claude --dry-run` validates the browser-profile boundary, checks optional redacted browser network captures for list/detail conversation endpoints, and reports archive freshness for `chatgpt_web` or `claude_web`.
+- `aicrawl sync web --provider chatgpt|claude --source <json-or-zip>` imports captured provider conversation detail payloads under `chatgpt_web` or `claude_web`.
+- `aicrawl sync web --provider chatgpt|claude --dry-run` validates the browser-profile boundary, checks optional redacted browser network captures for list/detail conversation endpoints, reports captured payload counts, and reports archive freshness.
 
 `aicrawl` does not call Claude, ChatGPT, Anthropic, or OpenAI network APIs during import, sync preflight, search, SQL, Markdown export, or CrawlBar manifest generation.
 
@@ -52,7 +54,7 @@ v0.1 supports local official export files plus an experimental web-sync prefligh
 
 - Session-token scraping.
 - Browser automation to click export buttons.
-- Live transcript writes from private product APIs.
+- Live browser fetching through CDP/page-context calls.
 - Enterprise compliance API ingestion.
 - Embeddings or semantic search.
 - TUI, watch daemon, scheduler, cloud sync, mirror, publish, or backups.

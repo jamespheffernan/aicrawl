@@ -1,0 +1,37 @@
+{
+  "id": "web-chatgpt-conv-1",
+  "title": "Web ChatGPT Fixture",
+  "create_time": 1760000000,
+  "update_time": 1760000060,
+  "current_node": "assistant",
+  "mapping": {
+    "root": {
+      "id": "root",
+      "parent": null,
+      "children": ["user"],
+      "message": null
+    },
+    "user": {
+      "id": "user",
+      "parent": "root",
+      "children": ["assistant"],
+      "message": {
+        "id": "user-message",
+        "create_time": 1760000001,
+        "author": {"role": "user"},
+        "content": {"parts": ["web sync chatgpt fixture user phrase"]}
+      }
+    },
+    "assistant": {
+      "id": "assistant",
+      "parent": "user",
+      "children": [],
+      "message": {
+        "id": "assistant-message",
+        "create_time": 1760000002,
+        "author": {"role": "assistant"},
+        "content": {"parts": ["web sync chatgpt fixture assistant phrase"]}
+      }
+    }
+  }
+}

@@ -36,13 +36,21 @@ func ParseFile(path string) (archive.ParsedSource, error) {
 }
 
 func StreamFile(path string, emit archive.ConversationEmitter) (archive.ParsedSource, error) {
+	return streamFileWithSourceKind(path, "claude_export", emit)
+}
+
+func StreamWebFile(path string, emit archive.ConversationEmitter) (archive.ParsedSource, error) {
+	return streamFileWithSourceKind(path, "claude_web", emit)
+}
+
+func streamFileWithSourceKind(path, sourceKind string, emit archive.ConversationEmitter) (archive.ParsedSource, error) {
 	if emit == nil {
 		return archive.ParsedSource{}, fmt.Errorf("claude stream callback is required")
 	}
 	var parsed archive.ParsedSource
 	var notClaude bool
 	err := security.WalkJSONSources(path, func(name string, r io.Reader) error {
-		next, err := parseReader(r, emit)
+		next, err := parseReaderWithSourceKind(r, sourceKind, emit)
 		if err == nil {
 			parsed = next
 			return errStopSourceWalk
@@ -84,7 +92,11 @@ func parseData(data []byte) (archive.ParsedSource, error) {
 }
 
 func parseReader(r io.Reader, emit archive.ConversationEmitter) (archive.ParsedSource, error) {
-	parsed := archive.ParsedSource{Provider: "claude", SourceKind: "claude_export"}
+	return parseReaderWithSourceKind(r, "claude_export", emit)
+}
+
+func parseReaderWithSourceKind(r io.Reader, sourceKind string, emit archive.ConversationEmitter) (archive.ParsedSource, error) {
+	parsed := archive.ParsedSource{Provider: "claude", SourceKind: sourceKind}
 	var sawConversation bool
 	br := bufio.NewReader(r)
 	streamed, err := jsonstream.ForEachTopLevelArrayValue(br, func(rawConversation json.RawMessage, index int) error {
@@ -111,10 +123,14 @@ func parseReader(r io.Reader, emit archive.ConversationEmitter) (archive.ParsedS
 	if err != nil {
 		return archive.ParsedSource{}, fmt.Errorf("read claude JSON source: %w", err)
 	}
-	return parseDataTo(data, emit)
+	return parseDataToWithSourceKind(data, sourceKind, emit)
 }
 
 func parseDataTo(data []byte, emit archive.ConversationEmitter) (archive.ParsedSource, error) {
+	return parseDataToWithSourceKind(data, "claude_export", emit)
+}
+
+func parseDataToWithSourceKind(data []byte, sourceKind string, emit archive.ConversationEmitter) (archive.ParsedSource, error) {
 	rawConversations, err := topLevelConversations(data)
 	if err != nil {
 		return archive.ParsedSource{}, err
@@ -122,7 +138,7 @@ func parseDataTo(data []byte, emit archive.ConversationEmitter) (archive.ParsedS
 	if !looksLikeClaude(rawConversations) {
 		return archive.ParsedSource{}, ErrNotClaude
 	}
-	parsed := archive.ParsedSource{Provider: "claude", SourceKind: "claude_export"}
+	parsed := archive.ParsedSource{Provider: "claude", SourceKind: sourceKind}
 	for i, rawConversation := range rawConversations {
 		conversation, warnings, err := parseConversation(rawConversation, i)
 		if err != nil {
@@ -143,6 +159,9 @@ func topLevelConversations(data []byte) ([]json.RawMessage, error) {
 	var object map[string]json.RawMessage
 	if err := json.Unmarshal(data, &object); err != nil {
 		return nil, ErrNotClaude
+	}
+	if looksLikeClaudeConversation(data) {
+		return []json.RawMessage{data}, nil
 	}
 	if raw, ok := object["conversations"]; ok {
 		if err := json.Unmarshal(raw, &array); err != nil {

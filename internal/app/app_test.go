@@ -366,7 +366,11 @@ func TestSyncWebDryRunReportsContractAndRedactsCapture(t *testing.T) {
 		SourceKind            string `json:"source_kind"`
 		AuthState             string `json:"auth_state"`
 		EndpointContractState string `json:"endpoint_contract_state"`
-		Freshness             struct {
+		Source                struct {
+			Conversations int `json:"conversations"`
+			Messages      int `json:"messages"`
+		} `json:"source"`
+		Freshness struct {
 			State string `json:"state"`
 		} `json:"freshness"`
 	}
@@ -384,6 +388,79 @@ func TestSyncWebDryRunReportsContractAndRedactsCapture(t *testing.T) {
 	}
 	if report.Freshness.State != "archive_missing" {
 		t.Fatalf("freshness state = %q, want archive_missing", report.Freshness.State)
+	}
+}
+
+func TestSyncWebSourceImportsSearchablePayloadAndIsIdempotent(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
+
+	fixturePath := filepath.Join("..", "..", "testdata", "redacted", "chatgpt-web-conversation.fixture.json")
+	var stdout bytes.Buffer
+	cli := New()
+	cli.stdout = &stdout
+	if err := cli.Run(context.Background(), []string{"sync", "web", "--provider", "chatgpt", "--source", fixturePath, "--json"}); err != nil {
+		t.Fatalf("sync web source: %v", err)
+	}
+	var stats archive.ImportStats
+	if err := json.Unmarshal(stdout.Bytes(), &stats); err != nil {
+		t.Fatalf("decode sync stats: %v", err)
+	}
+	if stats.Provider != "chatgpt" || stats.SourceKind != "chatgpt_web" {
+		t.Fatalf("sync identity = %s/%s, want chatgpt/chatgpt_web", stats.Provider, stats.SourceKind)
+	}
+	if stats.Conversations != 1 || stats.Messages != 3 {
+		t.Fatalf("sync counts = %d/%d, want 1 conversation and 3 messages", stats.Conversations, stats.Messages)
+	}
+	stdout.Reset()
+
+	if err := cli.Run(context.Background(), []string{"search", "web sync chatgpt fixture assistant phrase", "--provider", "chatgpt", "--json"}); err != nil {
+		t.Fatalf("search web synced content: %v", err)
+	}
+	var hits []archive.SearchHit
+	if err := json.Unmarshal(stdout.Bytes(), &hits); err != nil {
+		t.Fatalf("decode search hits: %v", err)
+	}
+	if len(hits) != 1 || hits[0].Provider != "chatgpt" {
+		t.Fatalf("hits = %+v, want one ChatGPT web synced hit", hits)
+	}
+	stdout.Reset()
+
+	if err := cli.Run(context.Background(), []string{"sync", "web", "--provider", "chatgpt", "--source", fixturePath, "--json"}); err != nil {
+		t.Fatalf("repeat sync web source: %v", err)
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &stats); err != nil {
+		t.Fatalf("decode repeat sync stats: %v", err)
+	}
+	if !stats.AlreadyImported {
+		t.Fatalf("repeat sync was not idempotent: %+v", stats)
+	}
+	stdout.Reset()
+
+	if err := cli.Run(context.Background(), []string{"sync", "web", "--provider", "chatgpt", "--source", fixturePath, "--dry-run", "--json"}); err != nil {
+		t.Fatalf("sync web dry-run source: %v", err)
+	}
+	var report struct {
+		Freshness struct {
+			State        string `json:"state"`
+			LastImportAt string `json:"last_import_at"`
+		} `json:"freshness"`
+		Source struct {
+			Conversations int `json:"conversations"`
+			Messages      int `json:"messages"`
+		} `json:"source"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode dry-run source report: %v", err)
+	}
+	if report.Freshness.State != "seen" || report.Freshness.LastImportAt == "" {
+		t.Fatalf("freshness = %+v, want seen with last import", report.Freshness)
+	}
+	if report.Source.Conversations != 1 || report.Source.Messages != 3 {
+		t.Fatalf("source counts = %+v, want 1/3", report.Source)
 	}
 }
 
@@ -449,9 +526,9 @@ func TestInvalidFilterOptionsReturnUsageErrors(t *testing.T) {
 			want: "--provider",
 		},
 		{
-			name: "sync web requires dry run",
+			name: "sync web requires source for live write",
 			args: []string{"sync", "web", "--provider", "chatgpt"},
-			want: "--dry-run",
+			want: "--source",
 		},
 		{
 			name: "conversations limit",
