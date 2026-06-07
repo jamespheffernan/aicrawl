@@ -69,7 +69,7 @@ aicrawl status
 aicrawl status --json
 ```
 
-JSON output includes a `web_sync` array for `chatgpt_web` and `claude_web` with freshness state, last import timestamp, last checked timestamp, synced conversation/message counts, candidate count, and cursor metadata. This lets operators see stale or never-run web syncs from the normal status surface without running provider-specific dry-runs.
+JSON output includes a `web_sync` array for `chatgpt_web` and `claude_web` with freshness state, last import timestamp, last checked timestamp, synced conversation/message counts, candidate count, and cursor metadata. It also includes `local_sources` for OpenClaw, Codex, Gemini, Claude Code/Claude desktop local-agent, Cursor, and Hermes imports, with `seen` or `never_imported` state plus last import counts and source-hash cursor metadata when available. This lets operators see stale or never-run sync/import sources from the normal status surface without running provider-specific dry-runs.
 
 ## `doctor`
 

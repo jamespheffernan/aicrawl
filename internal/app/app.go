@@ -214,8 +214,9 @@ func (a *App) status(ctx context.Context, globals globalOptions, args []string) 
 	}
 	if globals.format == "json" || parsed.bools["json"] {
 		return writeJSON(a.stdout, statusReport{
-			Status:  status,
-			WebSync: a.webSyncStatus(ctx, rt),
+			Status:       status,
+			WebSync:      a.webSyncStatus(ctx, rt),
+			LocalSources: a.localSourceStatus(ctx, rt),
 		})
 	}
 	return writeTextLine(a.stdout, "%s", status.Summary)
@@ -223,7 +224,8 @@ func (a *App) status(ctx context.Context, globals globalOptions, args []string) 
 
 type statusReport struct {
 	control.Status
-	WebSync []statusWebSync `json:"web_sync,omitempty"`
+	WebSync      []statusWebSync     `json:"web_sync,omitempty"`
+	LocalSources []statusLocalSource `json:"local_sources,omitempty"`
 }
 
 type statusWebSync struct {
@@ -237,6 +239,20 @@ type statusWebSync struct {
 	CursorValue       string `json:"cursor_value,omitempty"`
 	CursorAt          string `json:"cursor_at,omitempty"`
 	CandidateCount    int64  `json:"candidate_count,omitempty"`
+	ConversationCount int64  `json:"conversation_count,omitempty"`
+	MessageCount      int64  `json:"message_count,omitempty"`
+}
+
+type statusLocalSource struct {
+	Provider          string `json:"provider"`
+	SourceKind        string `json:"source_kind"`
+	State             string `json:"state"`
+	LastImportID      string `json:"last_import_id,omitempty"`
+	LastImportAt      string `json:"last_import_at,omitempty"`
+	LastCheckedAt     string `json:"last_checked_at,omitempty"`
+	CursorKind        string `json:"cursor_kind,omitempty"`
+	CursorValue       string `json:"cursor_value,omitempty"`
+	CursorAt          string `json:"cursor_at,omitempty"`
 	ConversationCount int64  `json:"conversation_count,omitempty"`
 	MessageCount      int64  `json:"message_count,omitempty"`
 }
@@ -263,6 +279,38 @@ func (a *App) webSyncStatus(ctx context.Context, rt runtime) []statusWebSync {
 			CursorValue:       freshness.CursorValue,
 			CursorAt:          freshness.CursorAt,
 			CandidateCount:    freshness.CandidateCount,
+			ConversationCount: freshness.ConversationCount,
+			MessageCount:      freshness.MessageCount,
+		})
+	}
+	return statuses
+}
+
+func (a *App) localSourceStatus(ctx context.Context, rt runtime) []statusLocalSource {
+	sources := []struct {
+		provider   string
+		sourceKind string
+	}{
+		{provider: "openclaw", sourceKind: openclawjsonl.SourceKind},
+		{provider: "codex", sourceKind: codexjsonl.SourceKind},
+		{provider: "gemini", sourceKind: geminicli.SourceKind},
+		{provider: "claude-code", sourceKind: claudecodejsonl.SourceKind},
+		{provider: "cursor", sourceKind: cursorstore.SourceKind},
+		{provider: "hermes", sourceKind: hermessession.SourceKind},
+	}
+	statuses := make([]statusLocalSource, 0, len(sources))
+	for _, source := range sources {
+		freshness := a.sourceFreshness(ctx, rt, source.sourceKind, "never_imported")
+		statuses = append(statuses, statusLocalSource{
+			Provider:          source.provider,
+			SourceKind:        freshness.SourceKind,
+			State:             freshness.State,
+			LastImportID:      freshness.LastImportID,
+			LastImportAt:      freshness.LastImportAt,
+			LastCheckedAt:     freshness.LastCheckedAt,
+			CursorKind:        freshness.CursorKind,
+			CursorValue:       freshness.CursorValue,
+			CursorAt:          freshness.CursorAt,
 			ConversationCount: freshness.ConversationCount,
 			MessageCount:      freshness.MessageCount,
 		})
@@ -1053,6 +1101,10 @@ func writeLiveSyncTemp(rt runtime, provider string, payload []byte) (string, fun
 }
 
 func (a *App) webFreshness(ctx context.Context, rt runtime, sourceKind string) websync.Freshness {
+	return a.sourceFreshness(ctx, rt, sourceKind, "never_synced")
+}
+
+func (a *App) sourceFreshness(ctx context.Context, rt runtime, sourceKind, missingState string) websync.Freshness {
 	freshness := websync.Freshness{State: "archive_missing", SourceKind: sourceKind}
 	if !archive.Exists(rt.DBPath) {
 		return freshness
@@ -1069,7 +1121,7 @@ func (a *App) webFreshness(ctx context.Context, rt runtime, sourceKind string) w
 		return freshness
 	}
 	if !ok {
-		freshness.State = "never_synced"
+		freshness.State = missingState
 		return freshness
 	}
 	return websync.Freshness{

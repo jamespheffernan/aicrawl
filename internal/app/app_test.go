@@ -1131,6 +1131,76 @@ func TestImportLocalTranscriptSourcesAreSearchable(t *testing.T) {
 	}
 }
 
+func TestStatusReportsLocalSourceFreshness(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
+
+	var stdout bytes.Buffer
+	cli := New()
+	cli.stdout = &stdout
+	fixturePath := filepath.Join("..", "..", "testdata", "redacted", "codex-session.fixture.jsonl")
+	if err := cli.Run(context.Background(), []string{"import", fixturePath, "--provider", "codex", "--json"}); err != nil {
+		t.Fatalf("import codex fixture: %v", err)
+	}
+	stdout.Reset()
+
+	if err := cli.Run(context.Background(), []string{"status", "--json"}); err != nil {
+		t.Fatalf("status after local import: %v", err)
+	}
+	var status struct {
+		LocalSources []struct {
+			Provider          string `json:"provider"`
+			SourceKind        string `json:"source_kind"`
+			State             string `json:"state"`
+			LastImportAt      string `json:"last_import_at"`
+			CursorKind        string `json:"cursor_kind"`
+			ConversationCount int64  `json:"conversation_count"`
+			MessageCount      int64  `json:"message_count"`
+		} `json:"local_sources"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &status); err != nil {
+		t.Fatalf("decode status local sources: %v", err)
+	}
+	if len(status.LocalSources) != 6 {
+		t.Fatalf("local source count = %d, want 6: %+v", len(status.LocalSources), status.LocalSources)
+	}
+	var codexStatus, openclawStatus *struct {
+		Provider          string `json:"provider"`
+		SourceKind        string `json:"source_kind"`
+		State             string `json:"state"`
+		LastImportAt      string `json:"last_import_at"`
+		CursorKind        string `json:"cursor_kind"`
+		ConversationCount int64  `json:"conversation_count"`
+		MessageCount      int64  `json:"message_count"`
+	}
+	for i := range status.LocalSources {
+		switch status.LocalSources[i].Provider {
+		case "codex":
+			codexStatus = &status.LocalSources[i]
+		case "openclaw":
+			openclawStatus = &status.LocalSources[i]
+		}
+	}
+	if codexStatus == nil {
+		t.Fatalf("status local_sources missing codex: %+v", status.LocalSources)
+	}
+	if codexStatus.SourceKind != "codex_jsonl" || codexStatus.State != "seen" || codexStatus.LastImportAt == "" || codexStatus.CursorKind != "source_hash" {
+		t.Fatalf("codex local source status = %+v, want seen source freshness", *codexStatus)
+	}
+	if codexStatus.ConversationCount != 1 || codexStatus.MessageCount == 0 {
+		t.Fatalf("codex local source counts = %+v, want imported counts", *codexStatus)
+	}
+	if openclawStatus == nil {
+		t.Fatalf("status local_sources missing openclaw: %+v", status.LocalSources)
+	}
+	if openclawStatus.SourceKind != "openclaw_jsonl" || openclawStatus.State != "never_imported" {
+		t.Fatalf("openclaw local source status = %+v, want never_imported", *openclawStatus)
+	}
+}
+
 func TestImportCursorStoreSourceIsSearchable(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

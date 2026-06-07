@@ -149,7 +149,7 @@ The tokenizer is `unicode61`. User queries are normalized and safely quoted by `
 
 ### `sync_state`
 
-Local summary table for source-kind status. v0.1 writes it during imports, including `sync web --source` and live `sync web --cdp-url` or profile-launched imports with source kinds such as `chatgpt_web` and `claude_web`, and reads it during `sync web --dry-run` and `status --json` to report freshness.
+Local summary table for source-kind status. v0.1 writes it during imports, including local transcript imports, `sync web --source`, and live `sync web --cdp-url` or profile-launched imports with source kinds such as `chatgpt_web` and `claude_web`. It reads the table during `sync web --dry-run` and `status --json` to report freshness for web syncs and local import roots.
 
 Important columns:
 

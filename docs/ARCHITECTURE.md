@@ -137,6 +137,6 @@ Private data should stay in ignored local paths such as `imports/private/`, plat
 
 ## CrawlBar And Control Surface
 
-`metadata --json`, `status --json`, and `doctor --json` emit JSON control payloads safe for automation and CrawlBar. `crawlbar manifest` writes a manifest containing command metadata, runtime paths, capabilities, and privacy flags.
+`metadata --json`, `status --json`, and `doctor --json` emit JSON control payloads safe for automation and CrawlBar. `status --json` exposes web-sync freshness and local transcript-source freshness from `sync_state`, including `never_imported` local sources so recurring import LaunchAgents that have not run yet are visible. `crawlbar manifest` writes a manifest containing command metadata, runtime paths, capabilities, and privacy flags.
 
 The manifest is generated from the current runtime config, so users can override the config path with `AICRAWL_CONFIG` or `--config` before generating it.
