@@ -200,6 +200,62 @@ func TestImportDryRunCursorStoreReportsCounts(t *testing.T) {
 	}
 }
 
+func TestReconcileOfficialExportReportsMissingAndArchivedRows(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
+
+	fixturePath := filepath.Join("..", "..", "testdata", "redacted", "chatgpt-export.fixture.json")
+	var stdout bytes.Buffer
+	cli := New()
+	cli.stdout = &stdout
+	if err := cli.Run(context.Background(), []string{"init"}); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	stdout.Reset()
+
+	if err := cli.Run(context.Background(), []string{"reconcile", fixturePath, "--provider", "chatgpt", "--json"}); err != nil {
+		t.Fatalf("reconcile missing: %v", err)
+	}
+	var report reconcileReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode missing report: %v", err)
+	}
+	if report.Provider != "chatgpt" || report.SourceKind != "chatgpt_export" {
+		t.Fatalf("report identity = %+v", report)
+	}
+	if report.SourceConversations != 1 || report.ArchivedConversations != 0 || report.MissingConversations != 1 {
+		t.Fatalf("conversation coverage = %+v", report)
+	}
+	if report.SourceMessages == 0 || report.ArchivedMessages != 0 || report.MissingMessages != report.SourceMessages {
+		t.Fatalf("message coverage = %+v", report)
+	}
+	if report.NextStep == "" {
+		t.Fatalf("next step is empty for missing rows")
+	}
+	stdout.Reset()
+
+	if err := cli.Run(context.Background(), []string{"import", fixturePath, "--provider", "chatgpt", "--json"}); err != nil {
+		t.Fatalf("import fixture: %v", err)
+	}
+	stdout.Reset()
+
+	if err := cli.Run(context.Background(), []string{"reconcile", fixturePath, "--provider", "chatgpt", "--json"}); err != nil {
+		t.Fatalf("reconcile archived: %v", err)
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode archived report: %v", err)
+	}
+	if report.MissingConversations != 0 || report.MissingMessages != 0 {
+		t.Fatalf("missing after import = %+v, want none", report)
+	}
+	if report.ArchivedConversations != report.SourceConversations || report.ArchivedMessages != report.SourceMessages {
+		t.Fatalf("archived coverage = %+v, want all source rows archived", report)
+	}
+}
+
 func TestImportStreamsLargeConversationArray(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

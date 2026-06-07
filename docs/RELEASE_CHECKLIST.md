@@ -53,6 +53,7 @@ Run:
 "$BIN" import ./testdata/redacted/chatgpt-export.fixture.zip --dry-run --json
 "$BIN" import ./testdata/redacted/claude-export.fixture.zip --provider claude --json
 "$BIN" import ./testdata/redacted/chatgpt-export.fixture.zip --provider chatgpt --json
+"$BIN" reconcile ./testdata/redacted/chatgpt-export.fixture.zip --provider chatgpt --json
 "$BIN" import ./testdata/redacted/openclaw-session.fixture.jsonl --provider openclaw --json
 "$BIN" import ./testdata/redacted/codex-session.fixture.jsonl --provider codex --json
 "$BIN" import ./testdata/redacted/gemini-session.fixture.json --provider gemini --json

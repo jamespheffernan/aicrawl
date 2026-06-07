@@ -7,13 +7,15 @@
 1. Collect an official export, captured web payload, local session file, or Cursor `store.db` in a private local directory.
 2. Run `aicrawl init` to create a private config and SQLite archive.
 3. Run `aicrawl import <path> --provider claude|chatgpt|openclaw|codex|gemini|claude-code|cursor|auto`.
-4. Use `conversations`, `messages`, `search`, `sql`, or `export markdown` against the local archive.
-5. Optionally run `aicrawl schedule launchd ...` to create a recurring macOS web-sync LaunchAgent.
-6. Optionally run `aicrawl crawlbar manifest` so CrawlBar can discover the local control surface.
+4. Use `aicrawl sync web --provider chatgpt|claude --cdp-url <url>` for frequent recent web conversation capture.
+5. Periodically run `aicrawl reconcile <official-export> --provider chatgpt|claude|auto` to compare official exports against the archive and identify any backfill needed.
+6. Use `conversations`, `messages`, `search`, `sql`, or `export markdown` against the local archive.
+7. Optionally run `aicrawl schedule launchd ...` to create a recurring macOS web-sync LaunchAgent.
+8. Optionally run `aicrawl crawlbar manifest` so CrawlBar can discover the local control surface.
 
 For web payloads, run `aicrawl sync web --provider chatgpt|claude --cdp-url <url>` against an already authenticated browser target, or pass `--source <json-or-zip>` for captured detail payloads. Dry-run mode reports auth state, contract state, source counts, and freshness without writing.
 
-The importer does not delete source files. Those files still contain private data after import. `import --dry-run` parses sources and reports counts without creating or writing the archive.
+The importer does not delete source files. Those files still contain private data after import. `import --dry-run` parses sources and reports counts without creating or writing the archive. `reconcile` streams official exports read-only and compares source IDs with archived rows; it never backfills by itself.
 
 ## Package Layout
 
@@ -61,6 +63,8 @@ flowchart LR
 The source reader accepts local JSON files and ZIP files with JSON entries. It rejects unsafe ZIP entries such as absolute paths, traversal, and symlinks. Official top-level conversation arrays are streamed so large exports do not have to be buffered as one JSON blob.
 
 Every import is keyed by source kind, provider, and source hash. Re-importing the same file returns the existing ledger row and does not duplicate conversations, messages, edges, attachments, or FTS entries.
+
+`reconcile` uses the same official export parser path as import, but opens the archive read-only and reports source, archived, and missing conversation/message coverage. Missing rows are resolved by running `aicrawl import` against the same export.
 
 ## Web Sync Preflight
 

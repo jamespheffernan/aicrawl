@@ -27,6 +27,7 @@ aicrawl import ./store.db --provider cursor
 aicrawl sync web --provider chatgpt --source ./chatgpt-web-conversation.json
 aicrawl sync web --provider chatgpt --cdp-url http://127.0.0.1:9222 --max-conversations 50
 aicrawl sync web --provider chatgpt --dry-run --json
+aicrawl reconcile ./chatgpt-export.zip --provider chatgpt --json
 aicrawl conversations --limit 25
 aicrawl messages --conversation <conversation-id> --path current
 aicrawl search "known phrase"
@@ -57,6 +58,7 @@ v0.1 supports local official export files, captured ChatGPT and Claude web conve
 - `aicrawl sync web --provider chatgpt|claude --cdp-url <url>` attaches to an already authenticated browser target and fetches bounded recent conversation list/detail payloads from page context under `chatgpt_web` or `claude_web`.
 - `aicrawl sync web --provider chatgpt|claude --source <json-or-zip>` imports captured provider conversation detail payloads under the same source kinds.
 - `aicrawl sync web --provider chatgpt|claude --dry-run` validates the browser-profile boundary, checks optional redacted browser network captures for list/detail conversation endpoints, reports captured payload counts, and reports archive freshness.
+- `aicrawl reconcile <official-export> --provider chatgpt|claude|auto --json` compares a periodic official export against the local archive and reports missing conversation/message coverage without writing.
 - `aicrawl schedule launchd --provider chatgpt|claude --cdp-url <url>` writes a macOS LaunchAgent plist for recurring bounded web sync. It stores only command arguments, not browser credentials.
 - OpenClaw session JSONL with `session` and `message` events.
 - Codex rollout JSONL with `session_meta` and `response_item` message events.

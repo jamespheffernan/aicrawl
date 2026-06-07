@@ -58,6 +58,17 @@ The source export still contains private data. Keep it in a private ignored dire
 
 The SQLite archive also contains private conversation data. Runtime database, WAL, SHM, cache, log, and Markdown export paths should remain ignored and private.
 
+## Reconciliation
+
+Use official exports as periodic backfill and validation, not as the high-frequency sync lane:
+
+```bash
+aicrawl reconcile imports/private/<chatgpt-export>.zip --provider chatgpt --json
+aicrawl reconcile imports/private/<claude-export>.zip --provider claude --json
+```
+
+`reconcile` opens the existing archive read-only, streams the official export through the same parser used by `import`, and reports source, archived, and missing conversation/message counts. It does not write any archive rows. If the report shows missing coverage, run `aicrawl import` with the same export to backfill through the normal idempotent import path.
+
 ## v0.1 Non-Goals
 
 v0.1 does not support:

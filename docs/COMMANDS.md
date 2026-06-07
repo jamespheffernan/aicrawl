@@ -12,6 +12,7 @@ Usage:
   aicrawl metadata [--json]
   aicrawl status [--json]
   aicrawl import <zip-json-or-jsonl-db> [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|cursor|auto] [--dry-run] [--json]
+  aicrawl reconcile <official-export-zip-or-json> [--provider claude|chatgpt|auto] [--json]
   aicrawl sync web --provider chatgpt|claude [--source <json-or-zip>] [--profile <dir> | --cdp-url <url>] [--capture <network.json>] [--max-conversations 50] [--dry-run] [--json]
   aicrawl schedule launchd --provider chatgpt|claude --cdp-url <url> [--interval-minutes 15] [--max-conversations 50] [--out <plist>] [--json]
   aicrawl conversations [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|cursor|all] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit 50]
@@ -95,6 +96,18 @@ aicrawl import ./export.zip --provider auto
 Provider defaults to official Claude/ChatGPT export auto-detection when omitted or set to `auto`. Local agent transcript providers must be selected explicitly. Claude Code imports keep visible user/assistant text and skip control events, thinking blocks, tool calls, and tool results. Cursor imports open `store.db` read-only, use meta identity/title when available, order visible message blobs by SQLite `rowid`, and skip non-JSON blobs, tool calls, and tool results. Imports are idempotent by source kind, provider, and source hash. Text output includes a reminder that source files still contain private data.
 
 With `--dry-run`, import parses the source and reports candidate counts without opening, creating, or writing the archive. JSON output includes provider, source kind, conversation count, message count, attachment count, and bounded parser warnings. It does not include message bodies or full source paths.
+
+## `reconcile`
+
+Compares an official Claude or ChatGPT export against an existing local archive without writing to the archive.
+
+```bash
+aicrawl reconcile ./chatgpt-export.zip --provider chatgpt --json
+aicrawl reconcile ./claude-export.zip --provider claude
+aicrawl reconcile ./export.zip --provider auto --json
+```
+
+The report includes source conversation/message counts, archived conversation/message counts, missing counts, parser warnings, and a next step when backfill is needed. If rows are missing, run `aicrawl import` with the same official export to backfill through the normal idempotent import path.
 
 ## `sync web`
 

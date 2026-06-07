@@ -70,6 +70,8 @@ func (a *App) Run(ctx context.Context, args []string) error {
 		return a.doctor(ctx, globals, rest)
 	case "import":
 		return a.importSource(ctx, globals, rest)
+	case "reconcile":
+		return a.reconcile(ctx, globals, rest)
 	case "sync":
 		return a.sync(ctx, globals, rest)
 	case "schedule":
@@ -101,6 +103,7 @@ Usage:
   aicrawl metadata [--json]
   aicrawl status [--json]
   aicrawl import <zip-json-or-jsonl-db> [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|cursor|auto] [--dry-run] [--json]
+  aicrawl reconcile <official-export-zip-or-json> [--provider claude|chatgpt|auto] [--json]
   aicrawl sync web --provider chatgpt|claude [--source <json-or-zip>] [--profile <dir> | --cdp-url <url>] [--capture <network.json>] [--max-conversations 50] [--dry-run] [--json]
   aicrawl schedule launchd --provider chatgpt|claude --cdp-url <url> [--interval-minutes 15] [--max-conversations 50] [--out <plist>] [--json]
   aicrawl conversations [--provider claude|chatgpt|openclaw|codex|gemini|claude-code|cursor|all] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit 50]
