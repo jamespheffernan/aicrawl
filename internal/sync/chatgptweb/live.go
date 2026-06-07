@@ -47,6 +47,11 @@ type LiveCursor struct {
 	CandidateCount int64
 }
 
+type SkippedDetail struct {
+	ID     string
+	Status int
+}
+
 type LiveResult struct {
 	Payload                []byte
 	Cursor                 LiveCursor
@@ -54,6 +59,7 @@ type LiveResult struct {
 	FetchedConversations   int
 	NoChanges              bool
 	Warnings               []string
+	SkippedDetails         []SkippedDetail
 }
 
 func InspectLive(ctx context.Context, fetcher Fetcher, opts LiveOptions) (LiveInspection, error) {
@@ -83,14 +89,16 @@ func InspectLive(ctx context.Context, fetcher Fetcher, opts LiveOptions) (LiveIn
 		if len(ids) == 0 {
 			break
 		}
+		newCandidates := 0
 		for _, id := range ids {
 			if id == "" || seen[id] || inspection.CandidateConversations >= maxConversations {
 				continue
 			}
 			seen[id] = true
+			newCandidates++
 			inspection.CandidateConversations++
 		}
-		if len(ids) < limit {
+		if newCandidates == 0 || len(ids) < limit {
 			break
 		}
 	}
@@ -136,6 +144,7 @@ func FetchLiveWithCursor(ctx context.Context, fetcher Fetcher, opts LiveOptions)
 			break
 		}
 		stopAfterPage := false
+		newCandidates := 0
 		for _, item := range items {
 			if item.UpdatedAt != "" && item.UpdatedAt > maxObservedAt {
 				maxObservedAt = item.UpdatedAt
@@ -144,6 +153,7 @@ func FetchLiveWithCursor(ctx context.Context, fetcher Fetcher, opts LiveOptions)
 				continue
 			}
 			seen[item.ID] = true
+			newCandidates++
 			result.CandidateConversations++
 			if opts.CursorAfter != "" && item.UpdatedAt != "" && item.UpdatedAt <= opts.CursorAfter {
 				stopAfterPage = true
@@ -155,6 +165,7 @@ func FetchLiveWithCursor(ctx context.Context, fetcher Fetcher, opts LiveOptions)
 				return LiveResult{}, fmt.Errorf("fetch ChatGPT conversation detail: %w", err)
 			}
 			if inaccessibleStatus(detailResp.Status) {
+				result.SkippedDetails = append(result.SkippedDetails, SkippedDetail{ID: item.ID, Status: detailResp.Status})
 				continue
 			}
 			if !okStatus(detailResp.Status) {
@@ -169,7 +180,7 @@ func FetchLiveWithCursor(ctx context.Context, fetcher Fetcher, opts LiveOptions)
 			}
 			conversations = append(conversations, raw)
 		}
-		if stopAfterPage || len(items) < limit {
+		if stopAfterPage || newCandidates == 0 || len(items) < limit {
 			break
 		}
 	}
@@ -181,8 +192,11 @@ func FetchLiveWithCursor(ctx context.Context, fetcher Fetcher, opts LiveOptions)
 			CandidateCount: int64(result.CandidateConversations),
 		}
 	}
+	if len(result.SkippedDetails) > 0 {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("skipped %d inaccessible ChatGPT conversation details", len(result.SkippedDetails)))
+	}
 	if len(conversations) == 0 {
-		if opts.CursorAfter != "" {
+		if opts.CursorAfter != "" || len(result.SkippedDetails) > 0 {
 			result.NoChanges = true
 			return result, nil
 		}

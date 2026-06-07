@@ -114,6 +114,7 @@ Expected result:
 - Directory dry-runs for local transcript providers report aggregate source counts without writing the archive or emitting private source paths.
 - `status --json` reports `web_sync` freshness for ChatGPT and Claude web source kinds, including `last_checked_at`, cursor metadata, and candidate counts when available.
 - Repeated live web syncs with unchanged provider update cursors return a successful no-change result instead of re-importing the same detail payload.
+- Live web sync records 403/404/410 detail responses in `conversation_sync_status` as `inaccessible` while preserving accessible conversations from the same batch and without deleting existing archive rows.
 - Optional live-browser dry-runs report `source.kind` as `live_list` with candidate counts, or `live_list_unavailable` with a warning when no provider page target is attached; they do not write the archive.
 - Stale or partial web endpoint captures fail before archive writes with a stable `contract_<state>` error prefix.
 - Live fetch unit tests skip 403/404/410 conversation details while preserving accessible ChatGPT/Claude details in the same batch.

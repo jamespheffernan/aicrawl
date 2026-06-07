@@ -34,6 +34,8 @@ Accepted detail shapes:
 
 The fetched detail batch is imported through the existing ChatGPT web parser, which expects the ChatGPT conversation graph shape and preserves raw payloads. When list or detail payloads expose timestamps, live sync records a `provider_updated_at` cursor and later skips list candidates at or before that cursor. If nothing new is found, sync updates `last_checked_at` without fetching detail payloads or writing archive rows.
 
+Conversation detail responses with 403, 404, or 410 are skipped and recorded in `conversation_sync_status` as `inaccessible` with the provider HTTP status. Successful imports record the conversation status as `seen`. Neither status path deletes existing archive rows.
+
 ## Drift Behavior
 
-If a list response cannot expose IDs, sync stops without importing. If a detail response lacks `mapping`, sync fails before writing archive rows. Redacted network captures can still be checked with `sync web --capture ... --dry-run`.
+If a list response cannot expose IDs, sync stops without importing. If a detail response lacks `mapping`, sync fails before writing archive rows unless the response is one of the non-destructive inaccessible statuses above. Repeated list pages stop pagination once no new candidate IDs are observed. Redacted network captures can still be checked with `sync web --capture ... --dry-run`.

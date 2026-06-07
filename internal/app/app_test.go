@@ -1179,6 +1179,83 @@ func TestSyncWebLiveCDPImportsSearchableChatGPTPayload(t *testing.T) {
 	}
 }
 
+func TestSyncWebLiveCDPRecordsInaccessibleDetailStatus(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+	dataHome := filepath.Join(home, ".local", "share")
+	t.Setenv("XDG_DATA_HOME", dataHome)
+
+	server := newFakeChatGPTCDPServerWithMissingDetail(t)
+	defer server.Close()
+
+	var stdout bytes.Buffer
+	cli := New()
+	cli.stdout = &stdout
+	if err := cli.Run(context.Background(), []string{
+		"sync", "web",
+		"--provider", "chatgpt",
+		"--cdp-url", server.URL,
+		"--max-conversations", "2",
+		"--json",
+	}); err != nil {
+		t.Fatalf("sync web live CDP with inaccessible detail: %v", err)
+	}
+	var stats archive.ImportStats
+	if err := json.Unmarshal(stdout.Bytes(), &stats); err != nil {
+		t.Fatalf("decode sync stats: %v", err)
+	}
+	if stats.Conversations != 1 || len(stats.Warnings) != 1 {
+		t.Fatalf("stats = %+v, want one imported conversation and one bounded warning", stats)
+	}
+
+	db, err := sql.Open("sqlite", filepath.Join(dataHome, "aicrawl", "aicrawl.db"))
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	defer db.Close()
+	rows, err := db.QueryContext(context.Background(), `select raw_id, status, coalesce(http_status, 0), coalesce(last_seen_at, ''), coalesce(last_checked_at, '') from conversation_sync_status order by raw_id`)
+	if err != nil {
+		t.Fatalf("query sync statuses: %v", err)
+	}
+	defer rows.Close()
+	statuses := map[string]struct {
+		status        string
+		http          int
+		lastSeenAt    string
+		lastCheckedAt string
+	}{}
+	for rows.Next() {
+		var rawID string
+		var status string
+		var httpStatus int
+		var lastSeenAt string
+		var lastCheckedAt string
+		if err := rows.Scan(&rawID, &status, &httpStatus, &lastSeenAt, &lastCheckedAt); err != nil {
+			t.Fatalf("scan sync status: %v", err)
+		}
+		statuses[rawID] = struct {
+			status        string
+			http          int
+			lastSeenAt    string
+			lastCheckedAt string
+		}{status: status, http: httpStatus, lastSeenAt: lastSeenAt, lastCheckedAt: lastCheckedAt}
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("sync status rows: %v", err)
+	}
+	if got := statuses["live-cdp-ok"]; got.status != "seen" || got.http != 0 {
+		t.Fatalf("seen status = %+v, statuses = %+v", got, statuses)
+	}
+	if got := statuses["live-cdp-missing"]; got.status != "inaccessible" || got.http != 404 {
+		t.Fatalf("inaccessible status = %+v, statuses = %+v", got, statuses)
+	}
+	if statuses["live-cdp-ok"].lastSeenAt == "" || statuses["live-cdp-ok"].lastCheckedAt == "" || statuses["live-cdp-missing"].lastSeenAt == "" || statuses["live-cdp-missing"].lastCheckedAt == "" {
+		t.Fatalf("sync status timestamps = %+v, want last_seen_at and last_checked_at for both rows", statuses)
+	}
+}
+
 func TestSyncWebDryRunCDPReportsLiveListCandidatesWithoutCreatingArchive(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -1375,6 +1452,93 @@ func newFakeChatGPTCDPServer(t *testing.T) *httptest.Server {
     }
   }
 }`
+				default:
+					status = 404
+				}
+				response := map[string]any{
+					"id": cmd.ID,
+					"result": map[string]any{
+						"result": map[string]any{
+							"type": "object",
+							"value": map[string]any{
+								"status": status,
+								"url":    "https://chatgpt.com/synthetic",
+								"text":   body,
+							},
+						},
+					},
+				}
+				data, _ = json.Marshal(response)
+				if err := conn.Write(context.Background(), websocket.MessageText, data); err != nil {
+					return
+				}
+			}
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	wsURL = "ws" + strings.TrimPrefix(server.URL, "http") + "/devtools/page/1"
+	return server
+}
+
+func newFakeChatGPTCDPServerWithMissingDetail(t *testing.T) *httptest.Server {
+	t.Helper()
+	var wsURL string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/json/list":
+			_ = json.NewEncoder(w).Encode([]map[string]any{{
+				"type":                 "page",
+				"url":                  "https://chatgpt.com/",
+				"webSocketDebuggerUrl": wsURL,
+			}})
+		case "/devtools/page/1":
+			conn, err := websocket.Accept(w, r, nil)
+			if err != nil {
+				t.Errorf("accept websocket: %v", err)
+				return
+			}
+			defer conn.Close(websocket.StatusNormalClosure, "")
+			for {
+				_, data, err := conn.Read(context.Background())
+				if err != nil {
+					return
+				}
+				var cmd struct {
+					ID     int            `json:"id"`
+					Method string         `json:"method"`
+					Params map[string]any `json:"params"`
+				}
+				if err := json.Unmarshal(data, &cmd); err != nil {
+					t.Errorf("decode command: %v", err)
+					return
+				}
+				expression, _ := cmd.Params["expression"].(string)
+				body := `{}`
+				status := 200
+				switch {
+				case strings.Contains(expression, "/backend-api/conversations?"):
+					body = `{"items":[{"id":"live-cdp-ok","update_time":1760000060},{"id":"live-cdp-missing","update_time":1760000050}]}`
+				case strings.Contains(expression, "/backend-api/conversation/live-cdp-ok"):
+					body = `{
+  "id": "live-cdp-ok",
+  "title": "Live CDP OK",
+  "update_time": 1760000060,
+  "mapping": {
+    "assistant": {
+      "id": "assistant",
+      "parent": null,
+      "children": [],
+      "message": {
+        "author": {"role": "assistant"},
+        "content": {"parts": ["live cdp accessible assistant phrase"]}
+      }
+    }
+  }
+}`
+				case strings.Contains(expression, "/backend-api/conversation/live-cdp-missing"):
+					status = 404
+					body = `{"error":"missing"}`
 				default:
 					status = 404
 				}

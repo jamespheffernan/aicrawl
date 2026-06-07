@@ -1,6 +1,6 @@
 # Schema
 
-`aicrawl` uses SQLite schema version 2. Migrations are managed with `PRAGMA user_version`; binaries fail fast when a database has a newer schema version than they support.
+`aicrawl` uses SQLite schema version 3. Migrations are managed with `PRAGMA user_version`; binaries fail fast when a database has a newer schema version than they support.
 
 ## Migration Contract
 
@@ -8,6 +8,7 @@
 - New databases start at `user_version = 0`.
 - Migration v1 creates the initial v0.1 tables and indexes.
 - Migration v2 adds durable sync cursor columns to `sync_state` and backfills `last_checked_at` from existing import freshness.
+- Migration v3 adds `conversation_sync_status` for non-destructive live web detail state such as inaccessible conversations.
 - Read-write opens run migrations.
 - Read-only opens verify that the database is not newer than the binary.
 - Stored timestamps use fixed-width UTC text with nanosecond precision so SQLite text ordering matches chronological ordering.
@@ -158,6 +159,23 @@ Important columns:
 - `conversation_count` and `message_count`: counts from the last import batch for this source kind.
 - `cursor_kind`, `cursor_value`, and `cursor_at`: durable cursor metadata. File and captured-payload imports record `source_hash`; live web syncs record `provider_updated_at` when provider list/detail payloads expose update timestamps.
 - `last_candidate_count`: count of list candidates observed during the last cursor-aware live web check when available.
+
+### `conversation_sync_status`
+
+Per-conversation live sync status keyed by source kind, provider, and provider raw conversation ID. This table is used to remember provider-list conversations whose detail payloads were skipped without deleting archived data.
+
+Important columns:
+
+- `source_kind`: web source family such as `chatgpt_web` or `claude_web`.
+- `provider`: provider ID.
+- `raw_id`: provider conversation ID observed in a web list response.
+- `conversation_id`: stable provider-prefixed archive ID when known.
+- `status`: currently `seen` for imported conversations or `inaccessible` for detail responses that returned 403, 404, or 410.
+- `http_status`: provider HTTP status for inaccessible detail responses.
+- `last_import_id`: import ledger ID for successful imported rows when available.
+- `first_seen_at`, `last_seen_at`, and `last_checked_at`: local observation timestamps.
+
+Successful imports upsert `status = seen`. Live detail responses with 403, 404, or 410 upsert `status = inaccessible` and do not delete conversations, messages, or raw payloads already in the archive.
 
 ## Raw Payload Preservation
 

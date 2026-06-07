@@ -86,7 +86,7 @@ func (a *Archive) ImportParsed(ctx context.Context, sourcePath string, parsed Pa
 			}
 		}
 		for _, conversation := range parsed.Conversations {
-			if err := upsertConversation(ctx, tx, importID, now, conversation); err != nil {
+			if err := upsertConversation(ctx, tx, parsed.SourceKind, importID, now, conversation); err != nil {
 				return err
 			}
 		}
@@ -158,7 +158,7 @@ func (a *Archive) ImportStream(ctx context.Context, sourcePath, provider, source
 			stats.Messages += len(conversation.Messages)
 			stats.Attachments += len(conversation.Attachments)
 			stats.Warnings = append(stats.Warnings, warnings...)
-			if err := upsertConversation(ctx, tx, importID, startedAt, conversation); err != nil {
+			if err := upsertConversation(ctx, tx, sourceKind, importID, startedAt, conversation); err != nil {
 				return err
 			}
 			return nil
@@ -218,6 +218,43 @@ func (a *Archive) UpdateSyncCursor(ctx context.Context, sourceKind string, curso
 		return fmt.Errorf("update sync cursor: %w", err)
 	}
 	return nil
+}
+
+func (a *Archive) RecordConversationSyncStatuses(ctx context.Context, statuses []ConversationSyncStatus) error {
+	if a == nil || a.store == nil {
+		return fmt.Errorf("archive is not open")
+	}
+	if len(statuses) == 0 {
+		return nil
+	}
+	checkedAt := timefmt.FormatUTC(time.Now())
+	return a.store.WithTx(ctx, func(tx *sql.Tx) error {
+		for _, status := range statuses {
+			if status.SourceKind == "" || status.Provider == "" || status.RawID == "" || status.Status == "" {
+				return fmt.Errorf("conversation sync status is missing required identity")
+			}
+			if err := upsertProvider(ctx, tx, status.Provider); err != nil {
+				return err
+			}
+			conversationID := status.ConversationID
+			if conversationID == "" {
+				conversationID = status.Provider + ":" + status.RawID
+			}
+			if _, err := tx.ExecContext(ctx, `insert into conversation_sync_status (
+				source_kind, provider, raw_id, conversation_id, status, http_status, last_import_id, last_seen_at, last_checked_at
+			) values (?, ?, ?, ?, ?, nullif(?, 0), null, ?, ?)
+			on conflict(source_kind, provider, raw_id) do update set
+				conversation_id = excluded.conversation_id,
+				status = excluded.status,
+				http_status = excluded.http_status,
+				last_seen_at = excluded.last_seen_at,
+				last_checked_at = excluded.last_checked_at`,
+				status.SourceKind, status.Provider, status.RawID, conversationID, status.Status, status.HTTPStatus, checkedAt, checkedAt); err != nil {
+				return fmt.Errorf("record conversation sync status: %w", err)
+			}
+		}
+		return nil
+	})
 }
 
 func upsertSyncState(ctx context.Context, tx *sql.Tx, sourceKind, importID, seenAt string, conversations, messages int, cursor SyncCursor) error {
@@ -317,7 +354,7 @@ func upsertProvider(ctx context.Context, tx *sql.Tx, provider string) error {
 	return err
 }
 
-func upsertConversation(ctx context.Context, tx *sql.Tx, importID, now string, conversation Conversation) error {
+func upsertConversation(ctx context.Context, tx *sql.Tx, sourceKind, importID, now string, conversation Conversation) error {
 	if conversation.ID == "" || conversation.Provider == "" || conversation.RawID == "" {
 		return fmt.Errorf("conversation is missing a stable ID")
 	}
@@ -343,6 +380,9 @@ func upsertConversation(ctx context.Context, tx *sql.Tx, importID, now string, c
 		conversation.CreatedAt, conversation.UpdatedAt, conversation.CurrentNodeID, raw, importID, importID, now, len(conversation.Messages)); err != nil {
 		return fmt.Errorf("upsert conversation %s: %w", conversation.ID, err)
 	}
+	if err := upsertConversationSyncStatus(ctx, tx, sourceKind, conversation.Provider, conversation.RawID, conversation.ID, "seen", 0, importID, now); err != nil {
+		return err
+	}
 	for _, message := range conversation.Messages {
 		if err := upsertMessage(ctx, tx, importID, now, conversation.ID, message); err != nil {
 			return err
@@ -363,6 +403,27 @@ func upsertConversation(ctx context.Context, tx *sql.Tx, importID, now string, c
 	}
 	if err := rebuildConversationFTS(ctx, tx, conversation.ID); err != nil {
 		return err
+	}
+	return nil
+}
+
+func upsertConversationSyncStatus(ctx context.Context, tx *sql.Tx, sourceKind, provider, rawID, conversationID, status string, httpStatus int, importID, now string) error {
+	if sourceKind == "" || provider == "" || rawID == "" || conversationID == "" || status == "" {
+		return nil
+	}
+	_, err := tx.ExecContext(ctx, `insert into conversation_sync_status (
+		source_kind, provider, raw_id, conversation_id, status, http_status, last_import_id, last_seen_at, last_checked_at
+	) values (?, ?, ?, ?, ?, nullif(?, 0), nullif(?, ''), ?, ?)
+	on conflict(source_kind, provider, raw_id) do update set
+		conversation_id = excluded.conversation_id,
+		status = excluded.status,
+		http_status = excluded.http_status,
+		last_import_id = excluded.last_import_id,
+		last_seen_at = excluded.last_seen_at,
+		last_checked_at = excluded.last_checked_at`,
+		sourceKind, provider, rawID, conversationID, status, httpStatus, importID, now, now)
+	if err != nil {
+		return fmt.Errorf("upsert conversation sync status %s/%s: %w", provider, rawID, err)
 	}
 	return nil
 }

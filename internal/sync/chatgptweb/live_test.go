@@ -104,8 +104,27 @@ func TestInspectLiveCountsChatGPTListCandidatesWithoutDetails(t *testing.T) {
 	}
 }
 
+func TestInspectLiveStopsOnRepeatedChatGPTPage(t *testing.T) {
+	inspection, err := InspectLive(context.Background(), fakeStatusFetcher{
+		"https://chatgpt.com/backend-api/conversations?offset=0&limit=2&order=updated": {
+			Status: 200,
+			Body:   []byte(`{"items":[{"id":"chatgpt-live-1"},{"id":"chatgpt-live-2"}]}`),
+		},
+		"https://chatgpt.com/backend-api/conversations?offset=2&limit=1&order=updated": {
+			Status: 200,
+			Body:   []byte(`{"items":[{"id":"chatgpt-live-1"},{"id":"chatgpt-live-2"}]}`),
+		},
+	}, LiveOptions{MaxConversations: 3, PageSize: 2})
+	if err != nil {
+		t.Fatalf("InspectLive: %v", err)
+	}
+	if inspection.CandidateConversations != 2 || len(inspection.Warnings) != 0 {
+		t.Fatalf("inspection = %+v, want repeated page to stop at two candidates", inspection)
+	}
+}
+
 func TestFetchLiveSkipsInaccessibleChatGPTDetails(t *testing.T) {
-	payload, err := FetchLive(context.Background(), fakeStatusFetcher{
+	result, err := FetchLiveWithCursor(context.Background(), fakeStatusFetcher{
 		"https://chatgpt.com/backend-api/conversations?offset=0&limit=2&order=updated": {
 			Status: 200,
 			Body:   []byte(`{"items":[{"id":"chatgpt-live-1"},{"id":"chatgpt-live-2"}]}`),
@@ -120,18 +139,24 @@ func TestFetchLiveSkipsInaccessibleChatGPTDetails(t *testing.T) {
 		},
 		"https://chatgpt.com/backend-api/conversations?offset=2&limit=1&order=updated": {
 			Status: 200,
-			Body:   []byte(`{"items":[]}`),
+			Body:   []byte(`{"items":[{"id":"chatgpt-live-1"},{"id":"chatgpt-live-2"}]}`),
 		},
 	}, LiveOptions{MaxConversations: 2, PageSize: 2})
 	if err != nil {
-		t.Fatalf("FetchLive: %v", err)
+		t.Fatalf("FetchLiveWithCursor: %v", err)
 	}
 	var conversations []map[string]any
-	if err := json.Unmarshal(payload, &conversations); err != nil {
+	if err := json.Unmarshal(result.Payload, &conversations); err != nil {
 		t.Fatalf("decode payload: %v", err)
 	}
 	if len(conversations) != 1 || conversations[0]["id"] != "chatgpt-live-1" {
 		t.Fatalf("conversations = %+v, want only accessible detail", conversations)
+	}
+	if len(result.SkippedDetails) != 1 || result.SkippedDetails[0].ID != "chatgpt-live-2" || result.SkippedDetails[0].Status != 404 {
+		t.Fatalf("skipped details = %+v, want inaccessible second detail", result.SkippedDetails)
+	}
+	if len(result.Warnings) != 1 {
+		t.Fatalf("warnings = %+v, want aggregate skipped warning", result.Warnings)
 	}
 }
 

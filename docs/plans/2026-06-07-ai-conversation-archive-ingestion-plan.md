@@ -135,7 +135,7 @@ Web sync should add a browser-orchestrated acquisition layer in front of the exi
 - **Test Scenarios:**
   - List sync discovers new and recently updated conversations since the last cursor.
   - Detail sync imports a conversation with branches when parent/child structure is exposed.
-  - Deleted, archived, or inaccessible conversations are marked stale without destructive deletion.
+  - Deleted, archived, or inaccessible conversations are marked inaccessible/stale without destructive deletion.
   - Official export import for the same conversation reconciles without duplicating messages.
 
 ### U5. Claude Web Sync Adapter

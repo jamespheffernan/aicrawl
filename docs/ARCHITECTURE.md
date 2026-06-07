@@ -56,7 +56,7 @@ flowchart LR
   Detect --> Parser["internal/ingest provider parser"]
   Parser --> Canonical["Canonical conversations, messages, edges, attachments"]
   Canonical --> Archive["internal/archive import transaction"]
-  Archive --> SQLite["SQLite schema v1"]
+  Archive --> SQLite["SQLite schema v3"]
   SQLite --> FTS["messages_fts"]
 ```
 
@@ -85,7 +85,7 @@ flowchart LR
 
 Live CDP fetches do not copy cookies, bearer tokens, session headers, or browser storage into config. The fetched detail batch is written to a private temporary cache file, imported through the same source-hash/idempotency path as captured payload files, then removed. When provider list/detail payloads include update timestamps, live sync stores a `provider_updated_at` cursor in `sync_state`; later runs pass that watermark into the provider adapter, skip older list candidates, and return a successful no-change result without detail fetches or archive writes.
 
-Live list and organization calls must return successful provider responses. Individual conversation detail calls that return 403, 404, or 410 are skipped so deleted, archived, or inaccessible conversations do not block importing the rest of the batch and do not trigger destructive archive deletion.
+Live list and organization calls must return successful provider responses. Individual conversation detail calls that return 403, 404, or 410 are skipped so deleted, archived, or inaccessible conversations do not block importing the rest of the batch. Those skipped detail observations are recorded in `conversation_sync_status` as `inaccessible`; successful imported conversations are recorded as `seen`. Neither path triggers destructive archive deletion.
 
 `schedule launchd` writes a macOS LaunchAgent plist that periodically invokes bounded `sync web` with either a configured CDP URL or a dedicated profile path. It does not load the agent or automate provider login.
 

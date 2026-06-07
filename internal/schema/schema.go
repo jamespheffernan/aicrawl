@@ -6,7 +6,7 @@ import (
 	"fmt"
 )
 
-const Version = 2
+const Version = 3
 
 var migrationV1 = []string{
 	`create table if not exists providers (
@@ -156,6 +156,23 @@ var migrationV2 = []string{
 	`update sync_state set last_checked_at = coalesce(last_checked_at, last_import_at, updated_at)`,
 }
 
+var migrationV3 = []string{
+	`create table if not exists conversation_sync_status (
+		source_kind text not null,
+		provider text not null references providers(id),
+		raw_id text not null,
+		conversation_id text not null,
+		status text not null,
+		http_status integer,
+		last_import_id text references imports(id),
+		first_seen_at text not null default (strftime('%Y-%m-%dT%H:%M:%f','now') || '000000Z'),
+		last_seen_at text,
+		last_checked_at text not null,
+		primary key(source_kind, provider, raw_id)
+	)`,
+	`create index if not exists conversation_sync_status_status_idx on conversation_sync_status(source_kind, status, last_checked_at desc)`,
+}
+
 func Migrate(ctx context.Context, db *sql.DB) error {
 	current, err := UserVersion(ctx, db)
 	if err != nil {
@@ -195,6 +212,8 @@ func migrationStatements(version int) []string {
 		return migrationV1
 	case 2:
 		return migrationV2
+	case 3:
+		return migrationV3
 	default:
 		return nil
 	}

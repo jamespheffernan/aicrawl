@@ -870,6 +870,7 @@ func syncWebLive(ctx context.Context, ar *archive.Archive, rt runtime, provider 
 	var cursor archive.SyncCursor
 	var warnings []string
 	var noChanges bool
+	var syncStatuses []archive.ConversationSyncStatus
 	switch provider {
 	case chatgptweb.Provider:
 		result, fetchErr := chatgptweb.FetchLiveWithCursor(ctx, chatGPTCDPFetcher{session: cdpSession}, chatgptweb.LiveOptions{MaxConversations: maxConversations, CursorAfter: cursorAfter})
@@ -878,6 +879,9 @@ func syncWebLive(ctx context.Context, ar *archive.Archive, rt runtime, provider 
 		warnings = append(warnings, result.Warnings...)
 		noChanges = result.NoChanges
 		cursor = archive.SyncCursor{Kind: result.Cursor.Kind, Value: result.Cursor.Value, At: result.Cursor.At, CandidateCount: result.Cursor.CandidateCount}
+		for _, skipped := range result.SkippedDetails {
+			syncStatuses = append(syncStatuses, webConversationStatus(spec.SourceKind, provider, skipped.ID, "inaccessible", skipped.Status))
+		}
 	case claudeweb.Provider:
 		result, fetchErr := claudeweb.FetchLiveWithCursor(ctx, claudeCDPFetcher{session: cdpSession}, claudeweb.LiveOptions{MaxConversations: maxConversations, CursorAfter: cursorAfter})
 		err = fetchErr
@@ -885,6 +889,9 @@ func syncWebLive(ctx context.Context, ar *archive.Archive, rt runtime, provider 
 		warnings = append(warnings, result.Warnings...)
 		noChanges = result.NoChanges
 		cursor = archive.SyncCursor{Kind: result.Cursor.Kind, Value: result.Cursor.Value, At: result.Cursor.At, CandidateCount: result.Cursor.CandidateCount}
+		for _, skipped := range result.SkippedDetails {
+			syncStatuses = append(syncStatuses, webConversationStatus(spec.SourceKind, provider, skipped.ID, "inaccessible", skipped.Status))
+		}
 	default:
 		err = fmt.Errorf("unsupported web provider %q", provider)
 	}
@@ -892,6 +899,9 @@ func syncWebLive(ctx context.Context, ar *archive.Archive, rt runtime, provider 
 		return archive.ImportStats{}, err
 	}
 	if noChanges {
+		if err := ar.RecordConversationSyncStatuses(ctx, syncStatuses); err != nil {
+			return archive.ImportStats{}, err
+		}
 		if cursor.Kind == "" && cursorAfter != "" {
 			cursor = archive.SyncCursor{Kind: "provider_updated_at", Value: cursorAfter, At: cursorAfter}
 		}
@@ -915,7 +925,21 @@ func syncWebLive(ctx context.Context, ar *archive.Archive, rt runtime, provider 
 			return archive.ImportStats{}, err
 		}
 	}
+	if err := ar.RecordConversationSyncStatuses(ctx, syncStatuses); err != nil {
+		return archive.ImportStats{}, err
+	}
 	return stats, nil
+}
+
+func webConversationStatus(sourceKind, provider, rawID, status string, httpStatus int) archive.ConversationSyncStatus {
+	return archive.ConversationSyncStatus{
+		SourceKind:     sourceKind,
+		Provider:       provider,
+		RawID:          rawID,
+		ConversationID: provider + ":" + rawID,
+		Status:         status,
+		HTTPStatus:     httpStatus,
+	}
 }
 
 func webNoChangeStats(provider, sourceKind string, warnings []string) archive.ImportStats {

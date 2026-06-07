@@ -105,6 +105,15 @@ type SyncCursor struct {
 	CandidateCount int64
 }
 
+type ConversationSyncStatus struct {
+	SourceKind     string `json:"source_kind"`
+	Provider       string `json:"provider"`
+	RawID          string `json:"raw_id"`
+	ConversationID string `json:"conversation_id"`
+	Status         string `json:"status"`
+	HTTPStatus     int    `json:"http_status,omitempty"`
+}
+
 type ConversationRow struct {
 	ID           string `json:"id"`
 	Provider     string `json:"provider"`
